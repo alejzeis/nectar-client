@@ -7,6 +7,7 @@ import * as fs from "fs";
 import * as os from "os";
 
 import * as util from "./util";
+import * as network from "./network";
 
 export const SOFTWARE = "Nectar-Client"
 export const SOFTWARE_VERSION = "0.1.2-alpha1";
@@ -35,6 +36,8 @@ export class Client {
     public logger: winston.LoggerInstance;
     public config: any;
     protected info: any;
+
+    private _network: network.DaemonSocketHandler;
 
     private _uuid: string;
 
@@ -149,6 +152,8 @@ export class Client {
         this.loadKeys();
         this.setupInfoObject();
         this.initUUID();
+
+        this._network = new network.DaemonSocketHandler(this);
     }
 
     public run() {
@@ -160,6 +165,8 @@ export class Client {
 
     public shutdown(state: Number = STATE_SHUTDOWN) {
         this.logger.notice("Got shutdown signal.");
+
+        this._network.shutdown();
 
         // TODO: Do shutdown stuff
 
