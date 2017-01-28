@@ -42,3 +42,5 @@ out
 # Nectar Stuff
 keys
 client.ini
+uuid.txt
+token.txt

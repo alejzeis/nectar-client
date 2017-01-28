@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as ini from "ini";
+import * as uuid from "uuid";
 
 const DEFAULT_CONFIG =
 `; Nectar-Client Config File\n
@@ -8,7 +9,7 @@ const DEFAULT_CONFIG =
 ; The IP address which the server is running on.
 ip=127.0.0.1
 ; The port which the server is running on.
-bindPort=8080
+port=8080
 ; If the client should connect over HTTPS (secure) or not.
 useHTTPS=false
 ; If the client should send system information.
@@ -31,7 +32,7 @@ export function getConfigDirLocation(system: boolean = false): string {
         case "freebsd":
         case "linux":
         case "openbsd":
-            return "/etc/nectar-server";
+            return "/etc/nectar-client";
         default:
             // Store in the current directory by default.
             return process.cwd();
@@ -48,4 +49,24 @@ export function loadConfig(location: string): any {
     }
     var config = ini.parse(fs.readFileSync(location, "utf-8"));
     return config;
+}
+
+export function loadUUID(location: string): string {
+    if(!fs.existsSync(location)) {
+        var id = uuid.v4();
+        fs.writeFileSync(location, id);
+        return id;
+    }
+    return fs.readFileSync(location, 'utf8').split("\n")[0];
+}
+
+export function loadToken(location: string): string {
+    if(!fs.existsSync(location)) {
+        return "none";
+    }
+    return fs.readFileSync(location, 'utf8').split("\n")[0];
+}
+
+export function saveToken(location: string, token: string) {
+    fs.writeFileSync(location, token);
 }
