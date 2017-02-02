@@ -12,7 +12,7 @@ import * as network from "./network";
 export const SOFTWARE = "Nectar-Client"
 export const SOFTWARE_VERSION = "0.1.2-alpha1";
 export const API_VERSION_MAJOR = "1";
-export const API_VERSION_MINOR = "2";
+export const API_VERSION_MINOR = "3";
 
 export const STATE_NORMAL = 0;
 export const STATE_SLEEP = 1;
@@ -158,8 +158,8 @@ export class Client {
 
     public run() {
         this.requestToken(true, () => {
-            this.switchState(STATE_NORMAL, this.onSwitchStateCB.bind(this)); // Switch to normal state
-            setInterval(this.doServerPing.bind(this), 15000); // Send pings every 15 seconds
+            //this.switchState(STATE_NORMAL, this.onSwitchStateCB.bind(this)); // Switch to normal state
+            //setInterval(this.doServerPing.bind(this), 15000); // Send pings every 15 seconds
         });
     }
 
@@ -224,7 +224,7 @@ export class Client {
         }
 
         this.logger.debug("Requesting new token from server...");
-        request(this.nectarAddressFull + "auth/tokenRequest?uuid=" + this.uuid + "&info=" + this.info, (error, response, body) => {
+        request(this.nectarAddressFull + "session/tokenRequest?uuid=" + this.uuid, (error, response, body) => {
             if(error) {
                 this.logger.error("FAILED TO REQUEST TOKEN!");
                 console.log(error);
@@ -241,7 +241,7 @@ export class Client {
             jsonwebtoken.verify(body, this.serverPublicKey, (err: any, decoded: any) => {
                 if(err) {
                     this.logger.error("FAILED TO VERIFY TOKEN!");
-                    console.log(error);
+                    console.log(err);
                     process.exit(1);
                 } else {
                     // Set up the token renew task
