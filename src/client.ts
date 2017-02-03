@@ -15,9 +15,10 @@ export const API_VERSION_MAJOR = "1";
 export const API_VERSION_MINOR = "3";
 
 export const STATE_NORMAL = 0;
-export const STATE_SLEEP = 1;
-export const STATE_SHUTDOWN = 2;
+export const STATE_SHUTDOWN = 1;
+export const STATE_SLEEP = 2;
 export const STATE_REBOOT = 3;
+export const STATE_UNKOWN = 4;
 
 function setupConsole(client: Client) {
     const rl = readline.createInterface({
@@ -285,7 +286,7 @@ export class Client {
             util.saveToken(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/token.txt", this.token);
         }
 
-        request(this.nectarAddressFull + "client/switchState?token=" + this.token + "&state=" + state, (error, response, body) => {
+        request(this.nectarAddressFull + "session/updateState?token=" + this.token + "&state=" + state, (error, response, body) => {
             if(error) {
                 this.logger.warn("Failed to switch state!");
                 console.log(error);
