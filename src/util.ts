@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as ini from "ini";
 import * as uuid from "uuid";
+import * as child_process from "child_process";
 
 const DEFAULT_CONFIG =
 `; Nectar-Client Config File\n
@@ -60,6 +61,13 @@ export function loadUUID(location: string): string {
     return fs.readFileSync(location, 'utf8').split("\n")[0];
 }
 
+export function loadAuthStr(location: string): string {
+    if(!fs.existsSync(location)) {
+        return null;
+    }
+    return fs.readFileSync(location, 'utf8').split("\n")[0];
+}
+
 export function loadToken(location: string): string {
     if(!fs.existsSync(location)) {
         return "none";
@@ -69,4 +77,22 @@ export function loadToken(location: string): string {
 
 export function saveToken(location: string, token: string) {
     fs.writeFileSync(location, token);
+}
+
+export function getUpdateInfo(): any {
+    if(os.platform() === "linux") {
+        let output = child_process.spawnSync("/usr/lib/update-notifier/apt-check").stdout;
+        if(output.toString().includes(";")) {
+            let split = output.toString().split(";");
+            return {
+                security: parseInt(split[0]),
+                other: parseInt(split[1])
+            }
+        }
+    } else {
+        return {
+            security: -1,
+            other: -1
+        };
+    }
 }

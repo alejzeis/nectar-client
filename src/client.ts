@@ -10,11 +10,11 @@ import * as util from "./util";
 import * as network from "./network";
 
 export const SOFTWARE = "Nectar-Client"
-export const SOFTWARE_VERSION = "0.1.2-alpha1";
-export const API_VERSION_MAJOR = "1";
-export const API_VERSION_MINOR = "3";
+export const SOFTWARE_VERSION = "0.2.1-alpha1";
+export const API_VERSION_MAJOR = "2";
+export const API_VERSION_MINOR = "2";
 
-export const STATE_NORMAL = 0;
+export const STATE_ONLINE = 0;
 export const STATE_SHUTDOWN = 1;
 export const STATE_SLEEP = 2;
 export const STATE_REBOOT = 3;
@@ -40,7 +40,10 @@ export class Client {
 
     private _network: network.DaemonSocketHandler;
 
+    private _serverID: string;
+
     private _uuid: string;
+    private _authStr: string;
 
     private _token: string;
 
@@ -118,6 +121,8 @@ export class Client {
             warn: "yellow",
             error: "red"
         });
+
+        this.logger.info(SOFTWARE + " version " + SOFTWARE_VERSION + " on " + os.platform() + " " + os.arch());
     }
 
     private setupInfoObject() {
@@ -145,6 +150,22 @@ export class Client {
         this.logger.notice("UUID is " + this._uuid);
     }
 
+    private initAuthStr() {
+        this._authStr = util.loadAuthStr(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/auth.txt");
+        if(!this._authStr) {
+            this.logger.error("Failed to load authentication string!");
+            this.logger.error("Please register a client and place the authentication string in the file \"auth.txt\", relative to the configuration directory.");
+            process.exit(1);
+        }
+        this.logger.notice("Loaded authentication string.");
+    }
+
+    private getServerInfo() {
+        request(this.nectarAddressFull + "infoRequest", (error, response, body) => {
+            // TODO: Get server ID and store it
+        });
+    }
+
     constructor() {
         setupConsole(this);
 
@@ -153,14 +174,15 @@ export class Client {
         this.loadKeys();
         this.setupInfoObject();
         this.initUUID();
+        this.initAuthStr();
+        this.getServerInfo();
 
         this._network = new network.DaemonSocketHandler(this);
     }
 
     public run() {
         this.requestToken(true, () => {
-            //this.switchState(STATE_NORMAL, this.onSwitchStateCB.bind(this)); // Switch to normal state
-            //setInterval(this.doServerPing.bind(this), 15000); // Send pings every 15 seconds
+            setInterval(this.doServerPing.bind(this), 15000); // Send pings every 15 seconds
         });
     }
 
@@ -225,7 +247,7 @@ export class Client {
         }
 
         this.logger.debug("Requesting new token from server...");
-        request(this.nectarAddressFull + "session/tokenRequest?uuid=" + this.uuid, (error, response, body) => {
+        request(this.nectarAddressFull + "session/tokenRequest?uuid=" + this.uuid + "&auth=" + this.authStr, (error, response, body) => {
             if(error) {
                 this.logger.error("FAILED TO REQUEST TOKEN!");
                 console.log(error);
@@ -252,6 +274,7 @@ export class Client {
                 }
             });
             this._token = body;
+            util.saveToken(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/token.txt", this.token);
             cb();
         });
     }
@@ -260,14 +283,19 @@ export class Client {
         this.logger.debug("Sending ping update...");
 
         let data = {
-            securityUpdates: 0,
-            otherUpdates: 0
+            system: {
+                uptime: os.uptime(),
+                ramFree: os.freemem()
+            },
+            updates: util.getUpdateInfo()
         }; // TODO: determine these
 
-        request(this.nectarAddressFull + "client/ping?token=" + this.token + "&data=" + data, (error, response, body) => {
+        let dataJWT = jsonwebtoken.sign(data, this.clientPrivateKey, { algorithm: "ES384" });
+
+        request(this.nectarAddressFull + "session/clientPing?token=" + this.token + "&data=" + dataJWT, (error, response, body) => {
             if(error) {
                 console.log(error);
-                this.logger.warn("Error while processing ping update to server ^^^.");
+                this.logger.warn("Error while processing ping update to server.");
                 return;
             }
 
@@ -321,6 +349,10 @@ export class Client {
         return this._uuid;
     }
 
+    get authStr(): string {
+        return this._authStr;
+    }
+
     get token(): string {
         return this._token;
     }
@@ -339,6 +371,11 @@ export class Client {
 
     get nectarAddressFull(): string {
         var protocol = this.config.network.useHTTPS ? "https://" : "http://";
-        return protocol + this.config.network.ip + ":" + this.config.network.port + "/nectar/api/" + API_VERSION_MAJOR + "/" + API_VERSION_MINOR + "/";
+        return protocol + this.config.network.ip + ":" + this.config.network.port + "/nectar/api/v/" + API_VERSION_MAJOR + "/" + API_VERSION_MINOR + "/";
+    }
+
+    get nectarAddress(): string {
+        var protocol = this.config.network.useHTTPS ? "https://" : "http://";
+        return protocol + this.config.network.ip + ":" + this.config.network.port + "/nectar/api/";
     }
 }
