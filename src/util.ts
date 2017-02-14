@@ -81,7 +81,16 @@ export function saveToken(location: string, token: string) {
 
 export function getUpdateInfo(): any {
     if(os.platform() === "linux") {
+        // TODO: Support other package managers.
         let output = child_process.spawnSync("/usr/lib/update-notifier/apt-check").stdout;
+
+        if(!output) {
+            return {
+                security: -1,
+                other: -1
+            };
+        }
+
         if(output.toString().includes(";")) {
             let split = output.toString().split(";");
             return {
