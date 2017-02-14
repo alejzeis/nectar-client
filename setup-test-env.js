@@ -1,9 +1,12 @@
 const mongo = require("mongodb");
 const uuidV4 = require("uuid/v4");
+const fs = require("fs");
 const crypto = require("crypto");
 
+// WARNING: Script clears database!
+
 function doHash(input) {
-    return crypto.createHash("sha256").update(input).digest("base64");
+    return crypto.createHash("sha256").update(input).digest("hex");
 }
 
 var ip;
@@ -30,6 +33,9 @@ mongo.MongoClient.connect("mongodb://" + ip + "/nectar", (err, db) => {
 	let clients = db.collection("clients");
     let users = db.collection("users");
 
+    clients.deleteMany();
+    users.deleteMany();
+
     console.log("- Connected!");
 
 	clients.insertOne({ uuid: clientUUID, auth: doHash(authStr) }, (err2, r) => {
@@ -47,6 +53,20 @@ mongo.MongoClient.connect("mongodb://" + ip + "/nectar", (err, db) => {
     });
 
 	db.close();
+
+    fs.writeFile("uuid.txt", clientUUID, (err4) => {
+        if(err4) {
+            console.log("Failed to save auth string to file!");
+            console.log(err4);
+        }
+    });
+
+    fs.writeFile("auth.txt", authStr, (err5) => {
+        if(err5) {
+            console.log("Failed to save auth string to file!");
+            console.log(err5);
+        }
+    });
 
     console.log("Done.");
 });
