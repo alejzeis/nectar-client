@@ -231,6 +231,13 @@ export class Client {
                         // token has not expired, we are done
                         this.logger.notice("Loaded token from disk.");
 
+                        this.switchState(STATE_ONLINE, (state: Number, success: boolean) => {
+                            if(!success) {
+                                // The server has not accepted the token, perhaps the server restarted
+                                this.requestToken(false); // Request new token
+                            }
+                        });
+
                         // Set task to renew token after expire
                         setTimeout(() => {
                             this.requestToken();
