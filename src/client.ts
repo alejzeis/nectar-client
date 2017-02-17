@@ -12,7 +12,7 @@ import * as network from "./network";
 export const SOFTWARE = "Nectar-Client"
 export const SOFTWARE_VERSION = "0.2.1-alpha1";
 export const API_VERSION_MAJOR = "2";
-export const API_VERSION_MINOR = "2";
+export const API_VERSION_MINOR = "3";
 
 export const STATE_ONLINE = 0;
 export const STATE_SHUTDOWN = 1;
