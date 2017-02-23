@@ -6,7 +6,7 @@ const crypto = require("crypto");
 // WARNING: Script clears database!
 
 function doHash(input) {
-    return crypto.createHash("sha256").update(input).digest("hex");
+    return crypto.createHash("sha512").update(input).digest("hex");
 }
 
 var ip;
