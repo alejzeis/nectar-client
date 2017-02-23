@@ -45,3 +45,4 @@ client.ini
 uuid.txt
 token.txt
 auth.txt
+deployToken.txt

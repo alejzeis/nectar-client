@@ -126,6 +126,7 @@ export class Client {
     }
 
     private setupInfoObject() {
+        // TODO: Send information to server
         this.info = {
             software: SOFTWARE,
             version: SOFTWARE_VERSION,
@@ -145,13 +146,17 @@ export class Client {
         }
     }
 
-    private initUUID() {
+    private initUUID(cb: ()=>void) {
         this._uuid = util.loadUUID(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/uuid.txt");
+        if(this._uuid == null && this.config.deployment.enable) {
+            this.logger.notice("Could not find UUID on disk, deployment ENABLED, attempting deployment join...");
+            
+        }
         this.logger.notice("UUID is " + this._uuid);
     }
 
     private initAuthStr() {
-        this._authStr = util.loadAuthStr(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/auth.txt");
+        this._authStr = util.readFileLineSync(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/auth.txt");
         if(!this._authStr) {
             this.logger.error("Failed to load authentication string!");
             this.logger.error("Please register a client and place the authentication string in the file \"auth.txt\", relative to the configuration directory.");
@@ -161,8 +166,9 @@ export class Client {
     }
 
     private getServerInfo() {
-        request(this.nectarAddressFull + "infoRequest", (error, response, body) => {
-            // TODO: Get server ID and store it
+        request(this.nectarAddress + "infoRequest", (error, response, body) => {
+            this._serverID = JSON.parse(body).serverID;
+            this.logger.info("Server ID is: " + this._serverID);
         });
     }
 
@@ -170,17 +176,23 @@ export class Client {
         setupConsole(this);
 
         this.setupLogger();
+
         this.loadConfig();
         this.loadKeys();
-        this.setupInfoObject();
-        this.initUUID();
-        this.initAuthStr();
-        this.getServerInfo();
 
-        this._network = new network.DaemonSocketHandler(this);
+        this.setupInfoObject();
+
+        this.initUUID(() => {
+            this.initAuthStr();
+
+            this.getServerInfo();
+
+            this._network = new network.DaemonSocketHandler(this);
+            this.run();
+        });
     }
 
-    public run() {
+    private run() {
         this.requestToken(true, () => {
             setInterval(this.doServerPing.bind(this), 15000); // Send pings every 15 seconds
         });
@@ -216,7 +228,7 @@ export class Client {
     private requestToken(inital: boolean = false, cb: ()=>void = () => {}) {
         if(inital) {
             // The inital token request, attempt to load from disk if it was saved.
-            let t = util.loadToken(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/token.txt");
+            let t = util.readFileLineSync(util.getConfigDirLocation(process.env.NECTAR_USE_SYSTEM) + "/token.txt");
             if(t !== "none") {
                 // The token was saved! Save it to memory and then attempt to calculate the expire time
                 this._token = t;

@@ -21,9 +21,14 @@ serverPublicKey=keys/server-pub.pem
 ; The location of the private and public ES384 keys for the CLIENT relative to the config directory
 clientPublicKey=keys/client-pub.pem
 clientPrivateKey=keys/client.pem\n
+[deployment]
+; If no uuid or auth string are found, attempt to register the client
+; using the server's deployment API instead of exiting.
+enable=false\n
 `;
 
 export function getConfigDirLocation(system: boolean = false): string {
+    // TODO: Windows support, env variable won't work for windows service.
     if(!system) {
         return process.cwd(); // Current directory
     }
@@ -34,6 +39,8 @@ export function getConfigDirLocation(system: boolean = false): string {
         case "linux":
         case "openbsd":
             return "/etc/nectar-client";
+        case "win32":
+            return "C:\\NectarClient";
         default:
             // Store in the current directory by default.
             return process.cwd();
@@ -54,23 +61,17 @@ export function loadConfig(location: string): any {
 
 export function loadUUID(location: string): string {
     if(!fs.existsSync(location)) {
-        var id = uuid.v4();
+        /*var id = uuid.v4();
         fs.writeFileSync(location, id);
-        return id;
-    }
-    return fs.readFileSync(location, 'utf8').split("\n")[0];
-}
-
-export function loadAuthStr(location: string): string {
-    if(!fs.existsSync(location)) {
+        return id;*/
         return null;
     }
     return fs.readFileSync(location, 'utf8').split("\n")[0];
 }
 
-export function loadToken(location: string): string {
+export function readFileLineSync(location: string): string {
     if(!fs.existsSync(location)) {
-        return "none";
+      return null;
     }
     return fs.readFileSync(location, 'utf8').split("\n")[0];
 }
