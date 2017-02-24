@@ -1,0 +1,9 @@
+{
+	"name": "nectar-client",
+	"authors": [
+		"jython234"
+	],
+	"description": "Reference client for nectar-server.",
+	"copyright": "Copyright (c) 2017, jython234",
+	"license": "proprietary"
+}
