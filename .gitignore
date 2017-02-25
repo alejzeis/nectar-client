@@ -1,6 +1,10 @@
+# D Files
 .dub
 docs.json
 __dummy.html
 *.o
 *.obj
 __test__*__
+
+# Binaries
+bin

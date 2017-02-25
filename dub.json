@@ -5,5 +5,13 @@
 	],
 	"description": "Reference client for nectar-server.",
 	"copyright": "Copyright (c) 2017, jython234",
-	"license": "BSD 2-clause"
+	"license": "BSD 2-clause",
+	"targetPath": "bin",
+	"targetType": "executable",
+	"dependencies": {
+		"jwtd": "~>0.4.1"
+	},
+	"subConfigurations": {
+		"jwtd" : "openssl"
+	}
 }
