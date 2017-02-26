@@ -1,19 +1,32 @@
 import std.stdio;
-import std.file;
 
-import jwtd.jwt;
+import consoled;
+
+import nectar_client.client;
+import nectar_client.util;
+import nectar_client.scheduler;
 
 void main() {
-	string token = "eyJhbGciOiJFUzM4NCJ9.eyJoYXNoIjoiOGYwOGU1YjQzNTU1NjMxZTcyOThkMTM2ZjI3MjMzNWFkNWI0NDIxMzVjOTZhOTI3NTMwZjM0ZmE4ZDM4MmU1YyIsInRpbWVzdGFtcCI6MTQ4NzcyODIzMzIxNX0.ilQLA-7RSv1TqXVW_PfPIwxmEDoFjfrSPjqKvw7mqFrY8S14ixLd2qi39p7j_oTLMcFFs4DHqWQJP4oR00nS2l82ZPwSNPJaYik4uWr5LrA9a4jHH9WyxSAYSO5MnykV";
+	Client client = null;
+	addCloseHandler((i) {
+		client.stop();
+	});
 
-	writeln(token);
-	writeln(decode(token, readPubKey()));
+	client = new Client(ifUseSystemDirs());
+	client.scheduler.registerTask(Task.constructRepeatingTask(() {
+		import std.conv;
+		client.logger.info("Testing task at " ~ to!string(getTimeMillis()));
+	}, 1000));
+	client.run();
 }
 
-string readPubKey() {
-	return readText("server-pub.pem");
-}
+private bool ifUseSystemDirs() {
+	import core.stdc.stdlib : getenv;
+	import std.string : toStringz, fromStringz;
 
-string readPrivateKey() {
-	return readText("server.pem");
+	string useDirs = cast(string) fromStringz(getenv(toStringz("NECTAR_CLIENT_USE_SYSTEM")));
+	if(useDirs == "true")
+		return true;
+	else
+		return false;
 }
