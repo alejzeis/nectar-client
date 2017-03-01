@@ -69,6 +69,10 @@ class NectarLogger : Logger {
                 if(print)
                     writec(FontStyle.bold, Fg.yellow, "WARNING");
                 return "WARNING";
+            case LogLevel.error:
+                if(print)
+                    writec(FontStyle.bold, Fg.red, "ERROR");
+                return "ERROR";
             case LogLevel.trace:
                 if(print)
                     writec(FontStyle.bold, Fg.cyan, "TRACE");

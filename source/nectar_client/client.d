@@ -1,5 +1,6 @@
 module nectar_client.client;
 
+import std.json;
 import std.experimental.logger;
 
 import core.stdc.stdlib : exit;
@@ -69,9 +70,27 @@ class Client {
      }
 
      private void initalConnect() {
-         import std.net.curl;
-         issueGETRequest("http://localhost:8080/nectar/api/infoRequest", (ushort status, string content, CurlException e) {
-            logger.info(to!string(status) ~ " " ~ content);
+         import std.net.curl : CurlException;
+
+         string url = "http://localhost:8080/nectar/api/infoRequest";
+         issueGETRequest(url, (ushort status, string content, CurlException e) {
+            if(!(e is null)) {
+                logger.error("Failed to connect to " ~ url ~ ", CurlException.");
+                logger.trace(e.toString());
+                logger.fatal("Failed to process inital connect!");
+                return;
+            }
+
+            if(status != 200) { // 200: OK
+                logger.error("Failed to connect to " ~ url ~ ", server returned non-200 status code.");
+                logger.fatal("Failed to process inital connect!");
+                return;
+            }
+
+            debug {
+                import std.conv : to;
+                logger.info("Got response: (" ~ to!string(status) ~ "): " ~ content);
+            }
          });
      }
 }
