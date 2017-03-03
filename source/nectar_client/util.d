@@ -1,11 +1,17 @@
 module nectar_client.util;
 
+version(Windows) {
+	immutable string PATH_SEPARATOR = "\\";
+} else {
+	immutable string PATH_SEPARATOR = "/";
+}
+
 /**
  * Get the current time in milliseconds (since epoch).
  * This method uses bindings to the C functions gettimeofday and
  * GetSystemTime depending on the platform.
  */
-long getTimeMillis() {
+long getTimeMillis() @system nothrow {
 	version(Posix) {
 		pragma(msg, "Using core.sys.posix.sys.time.gettimeofday() for getTimeMillis()");
 		import core.sys.posix.sys.time;

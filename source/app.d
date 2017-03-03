@@ -13,10 +13,6 @@ void main() {
 	});
 
 	client = new Client(ifUseSystemDirs());
-	client.scheduler.registerTask(Task.constructRepeatingTask(() {
-		import std.conv;
-		client.logger.info("Testing task at " ~ to!string(getTimeMillis()));
-	}, 1000));
 	client.run();
 }
 

@@ -1,13 +1,17 @@
 module nectar_client.client;
 
 import std.json;
+import std.file;
 import std.experimental.logger;
 
 import core.stdc.stdlib : exit;
 
 import nectar_client.logging;
 import nectar_client.util;
+import nectar_client.config;
 import nectar_client.scheduler;
+
+import inifiled;
 
 immutable string SOFTWARE = "Nectar-Client";
 immutable string SOFTWARE_VERSION = "1.0.0-alpha1";
@@ -26,8 +30,12 @@ class Client {
     private shared Logger _logger;
     private shared Scheduler _scheduler;
 
+    private shared Configuration _config;
+
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
     @property Scheduler scheduler() @trusted nothrow { return cast(Scheduler) this._scheduler; }
+
+    @property Configuration config() @trusted nothrow { return cast(Configuration) this._config; }
 
     public this(bool useSystemDirs) @trusted {
         this.useSystemDirs = useSystemDirs;
@@ -48,6 +56,22 @@ class Client {
         }
     }
 
+    private void loadConfig() @system {
+        Configuration cfg;
+        string cfgLocation = getConfigDirLocation(useSystemDirs) ~ PATH_SEPARATOR ~ "client.ini";
+
+        if(!exists(cfgLocation)) {
+            this.logger.warning("Failed to find config: " ~ cfgLocation ~ ", creating new...");
+            copyDefaultConfig(cfgLocation);
+        }
+
+        readINIFile(cfg, cfgLocation);
+
+        this._config = cfg;
+
+        this.logger.info("Loaded configuration.");
+    }
+
     public void stop() @safe {
         this.running = false;
     }
@@ -59,6 +83,8 @@ class Client {
 
         logger.info("Loading libraries...");
         loadLibraries();
+
+        loadConfig();
 
         logger.info("Starting " ~ SOFTWARE ~ " version " ~ SOFTWARE_VERSION ~ ", implementing API " ~ API_MAJOR ~ "-" ~ API_MINOR);
 
