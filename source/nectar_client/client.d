@@ -2,6 +2,7 @@ module nectar_client.client;
 
 import std.json;
 import std.file;
+import std.conv;
 import std.experimental.logger;
 
 import core.stdc.stdlib : exit;
@@ -10,8 +11,6 @@ import nectar_client.logging;
 import nectar_client.util;
 import nectar_client.config;
 import nectar_client.scheduler;
-
-import inifiled;
 
 immutable string SOFTWARE = "Nectar-Client";
 immutable string SOFTWARE_VERSION = "1.0.0-alpha1";
@@ -25,6 +24,9 @@ class Client {
     ++/
     immutable bool useSystemDirs;
 
+    private shared string _apiURL;
+    private shared string _apiURLRoot;
+
     package shared bool running = false;
 
     private shared Logger _logger;
@@ -36,6 +38,9 @@ class Client {
     @property Scheduler scheduler() @trusted nothrow { return cast(Scheduler) this._scheduler; }
 
     @property Configuration config() @trusted nothrow { return cast(Configuration) this._config; }
+
+    @property string apiURL() @trusted nothrow { return cast(string) this._apiURL; }
+    @property string apiURLRoot() @trusted nothrow { return cast(string) this._apiURLRoot; }
 
     public this(bool useSystemDirs) @trusted {
         this.useSystemDirs = useSystemDirs;
@@ -57,19 +62,20 @@ class Client {
     }
 
     private void loadConfig() @system {
-        Configuration cfg;
-        string cfgLocation = getConfigDirLocation(useSystemDirs) ~ PATH_SEPARATOR ~ "client.ini";
+        string cfgLocation = getConfigDirLocation(useSystemDirs) ~ PATH_SEPARATOR ~ "client.json";
 
         if(!exists(cfgLocation)) {
             this.logger.warning("Failed to find config: " ~ cfgLocation ~ ", creating new...");
             copyDefaultConfig(cfgLocation);
         }
 
-        readINIFile(cfg, cfgLocation);
-
-        this._config = cfg;
+        this._config = cast(shared) Configuration.load(cfgLocation);
 
         this.logger.info("Loaded configuration.");
+        
+        this._apiURLRoot = (this.config.network.useSecure ? "https://" : "http://") ~ this.config.network.serverAddress
+                        ~ ":" ~ to!string(this.config.network.serverPort) ~ "/nectar/api";
+        this._apiURL = this.apiURLRoot ~ "/v/" ~ API_MAJOR ~ "/" ~ API_MINOR;
     }
 
     public void stop() @safe {
@@ -98,7 +104,7 @@ class Client {
      private void initalConnect() {
          import std.net.curl : CurlException;
 
-         string url = "http://localhost:8080/nectar/api/infoRequest";
+         string url = this.apiURL ~ "/infoRequest";
          issueGETRequest(url, (ushort status, string content, CurlException e) {
             if(!(e is null)) {
                 logger.error("Failed to connect to " ~ url ~ ", CurlException.");

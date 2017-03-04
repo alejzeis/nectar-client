@@ -33,6 +33,19 @@ long getTimeMillis() @system nothrow {
 	}
 }
 
+bool jsonValueToBool(std.json.JSONValue value) {
+	import std.json : JSON_TYPE;
+
+	switch(value.type) {
+		case JSON_TYPE.TRUE:
+			return true;
+		case JSON_TYPE.FALSE:
+			return false;
+		default:
+			throw new Exception("Value is not a boolean!");
+	}
+}
+
 import std.net.curl;
 
 void issueGETRequest(in string url, void delegate(ushort status, string content, CurlException err) callback) {

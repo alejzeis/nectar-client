@@ -1,28 +1,28 @@
 module nectar_client.config;
 
-import inifiled;
+import std.exception : enforce;
+import std.json;
+import std.conv;
+
+import nectar_client.util;
 
 immutable string DEFAULT_CONFIG = "
-; Nectar-Client Config File\n
-[network]
-; The IP address which the server is running on.
-ip=127.0.0.1
-; The port which the server is running on.
-port=8080
-; If the client should connect over HTTPS (secure) or not.
-useHTTPS=false
-; If the client should send system information.
-sendSystemData=true\n
-[security]
-; The location of the public ES384 key for the SERVER relative to the config directory
-serverPublicKey=keys/server-pub.pem
-; The location of the private and public ES384 keys for the CLIENT relative to the config directory
-clientPublicKey=keys/client-pub.pem
-clientPrivateKey=keys/client.pem\n
-[deployment]
-; If no uuid or auth string are found, attempt to register the client
-; using the server's deployment API instead of exiting.
-enable=false\n
+{
+    \"network\" : {
+        \"ip\": \"127.0.0.1\",
+        \"port\": 8080,
+        \"useHTTPS\": false,
+        \"sendSystemData\": true
+    },
+    \"security\" : {
+        \"serverPublicKey\": \"keys/server-pub.pem\",
+        \"clientPublicKey\": \"keys/client-pub.pem\",
+        \"clientPrivateKey\": \"keys/server.pem\"
+    },
+    \"deployment\" : {
+        \"enable\": false
+    }
+}
 ";
 
 string getConfigDirLocation(in bool useSystemDirs = false) @trusted {
@@ -45,22 +45,60 @@ void copyDefaultConfig(in string location) @trusted {
     write(location, DEFAULT_CONFIG);
 }
 
-struct Configuration {
-    @INI NetworkConfiguration network;
-    @INI SecurityConfiguration security;
+class Configuration {
+    NetworkConfiguration network;
+    SecurityConfiguration security;
+    DeploymentConfiguration deployment;
+
+    this(NetworkConfiguration network, SecurityConfiguration security, DeploymentConfiguration deployment) {
+        this.network = network;
+        this.security = security;
+        this.deployment = deployment;
+    }
+
+    static Configuration load(in string location) {
+        import std.file : exists, readText;
+
+        enforce(exists(location), "File does not exist!");
+
+        auto contents = readText(location);
+
+        JSONValue v = parseJSON(contents);
+        
+        NetworkConfiguration nc = NetworkConfiguration(
+            v["network"]["ip"].str,
+            to!ushort(v["network"]["port"].integer),
+            jsonValueToBool(v["network"]["useHTTPS"]),
+            jsonValueToBool(v["network"]["sendSystemData"])
+        );
+
+        SecurityConfiguration sc = SecurityConfiguration(
+            v["security"]["serverPublicKey"].str,
+            v["security"]["clientPublicKey"].str,
+            v["security"]["clientPrivateKey"].str
+        );
+
+        DeploymentConfiguration dc = DeploymentConfiguration(jsonValueToBool(v["deployment"]["enable"]));
+
+        return new Configuration(nc, sc, dc);
+    }
 }
 
 struct NetworkConfiguration {
-    @INI string serverAddress;
-    @INI ushort serverPort;
+    immutable string serverAddress;
+    immutable ushort serverPort;
 
-    @INI bool useSecure;
-    @INI bool sendSystemData;
+    immutable bool useSecure;
+    immutable bool sendSystemData;
 }
 
 struct SecurityConfiguration {
-    @INI string serverPublicKey;
+    immutable string serverPublicKey;
 
-    @INI string clientPublicKey;
-    @INI string clientPrivateKey;
+    immutable string clientPublicKey;
+    immutable string clientPrivateKey;
+}
+
+struct DeploymentConfiguration {
+    immutable bool enabled;
 }

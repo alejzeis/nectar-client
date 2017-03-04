@@ -10,7 +10,6 @@
 	"targetType": "executable",
 	"dependencies": {
 		"derelict_extras-jwt": "~>1.0.0",
-		"consoled": "~>1.0.4",
-		"inifiled": "~>0.0.6"
+		"consoled": "~>1.0.4"
 	}
 }
