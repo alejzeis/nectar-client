@@ -19,11 +19,11 @@ struct Task {
 
     package ulong lastRan;
 
-    static Task constructRepeatingTask(TaskMethod method, ulong interval) {
+    static Task constructRepeatingTask(TaskMethod method, ulong interval) @safe nothrow {
         return Task(method, interval, true, true, 0);
     }
 
-    static Task constructDelayedStartTask(TaskMethod method, ulong delay) {
+    static Task constructDelayedStartTask(TaskMethod method, ulong delay) @trusted nothrow {
         return Task(method, delay, false, true, getTimeMillis());
     }
 }
@@ -32,16 +32,16 @@ class Scheduler {
     private Client client;
     private DList!Task tasks;
 
-    this(Client client) {
+    this(Client client) @safe nothrow {
         this.client = client;
         this.tasks = DList!Task();
     }
 
-    void registerTask(Task task) {
+    void registerTask(Task task) @safe nothrow {
         this.tasks.insertBack(task);
     }
 
-    package void doRun() {
+    package void doRun() @system {
         while(this.client.running) {
             if(this.tasks.empty) {
                 Thread.sleep(50.msecs);

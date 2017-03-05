@@ -39,6 +39,20 @@ string getConfigDirLocation(in bool useSystemDirs = false) @trusted {
 	}
 }
 
+string getLogLocation(in bool useSystemDirs = false) @trusted {
+    import std.file : getcwd;
+
+    if(useSystemDirs) {
+        version(Windows) {
+            return "C:\\NectarClient\\client.log";
+        } else version(Posix) {
+            return "/var/log/nectarclient.log";
+        }
+    } else {
+        return getcwd() ~ PATH_SEPARATOR ~ "client.log";
+    }
+}
+
 void copyDefaultConfig(in string location) @trusted {
     import std.file : write;
 

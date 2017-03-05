@@ -1,5 +1,7 @@
 module nectar_client.util;
 
+import std.conv : to;
+
 version(Windows) {
 	immutable string PATH_SEPARATOR = "\\";
 } else {
@@ -47,6 +49,28 @@ bool jsonValueToBool(std.json.JSONValue value) {
 }
 
 import std.net.curl;
+
+template RequestErrorHandleMixin(string operation, int expectedStatusCode, bool fatal, bool doReturn = false) {
+	const char[] RequestErrorHandleMixin = 
+	"
+	bool failure = false;
+
+	if(!(ce is null) && !canFind(ce.toString(), \"request returned status code\")) {
+		logger.error(\"Failed to connect to \" ~ url ~ \", CurlException.\");
+		logger.trace(ce.toString());
+		logger." ~ (fatal ? "fatal" : "error") ~ "(\"Failed to process " ~ operation ~ "!\");
+		failure = true;
+		" ~ (doReturn ? "return;" : "") ~ "
+	}
+
+	if(status != " ~ to!string(expectedStatusCode) ~ ") {
+		logger.error(\"Failed to connect to \" ~ url ~ \", server returned non-200 status code.\");
+		logger." ~ (fatal ? "fatal" : "error") ~ "(\"Failed to process " ~ operation ~ "!\");
+		failure = true;
+		" ~ (doReturn ? "return;" : "") ~ "
+	}
+	";
+}
 
 void issueGETRequest(in string url, void delegate(ushort status, string content, CurlException err) callback) {
 

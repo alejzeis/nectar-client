@@ -3,6 +3,7 @@ module nectar_client.client;
 import std.json;
 import std.file;
 import std.conv;
+import std.algorithm;
 import std.experimental.logger;
 
 import core.stdc.stdlib : exit;
@@ -14,6 +15,7 @@ import nectar_client.scheduler;
 
 immutable string SOFTWARE = "Nectar-Client";
 immutable string SOFTWARE_VERSION = "1.0.0-alpha1";
+immutable string RUNTIME = "DRUNTIME, compiled by " ~ __VENDOR__ ~ ", version " ~ to!string(__VERSION__);
 immutable string API_MAJOR = "2";
 immutable string API_MINOR = "3";
 
@@ -24,15 +26,21 @@ class Client {
     ++/
     immutable bool useSystemDirs;
 
-    private shared string _apiURL;
-    private shared string _apiURLRoot;
+    package {
+        shared bool running = false;
+    }
 
-    package shared bool running = false;
+    private {
+        shared string _apiURL;
+        shared string _apiURLRoot;
 
-    private shared Logger _logger;
-    private shared Scheduler _scheduler;
+        shared Logger _logger;
+        shared Scheduler _scheduler;
 
-    private shared Configuration _config;
+        shared Configuration _config;
+
+        shared string _serverID;
+    }
 
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
     @property Scheduler scheduler() @trusted nothrow { return cast(Scheduler) this._scheduler; }
@@ -44,7 +52,7 @@ class Client {
 
     public this(bool useSystemDirs) @trusted {
         this.useSystemDirs = useSystemDirs;
-        this._logger = cast(shared) new NectarLogger(LogLevel.trace, "log.txt");
+        this._logger = cast(shared) new NectarLogger(LogLevel.trace, getLogLocation(useSystemDirs));
         this._scheduler = cast(shared) new Scheduler(this);
     }
 
@@ -76,6 +84,33 @@ class Client {
         this._apiURLRoot = (this.config.network.useSecure ? "https://" : "http://") ~ this.config.network.serverAddress
                         ~ ":" ~ to!string(this.config.network.serverPort) ~ "/nectar/api";
         this._apiURL = this.apiURLRoot ~ "/v/" ~ API_MAJOR ~ "/" ~ API_MINOR;
+
+        this.loadUUIDAndAuth();
+    }
+
+    private void loadUUIDAndAuth() @system {
+        string uuidLocation = getConfigDirLocation(useSystemDirs) ~ PATH_SEPARATOR ~ "uuid.txt";
+        string authLocation = getConfigDirLocation(useSystemDirs) ~ PATH_SEPARATOR ~ "auth.txt";
+
+        if(!exists(uuidLocation) && !this.config.deployment.enabled) {
+            this.logger.fatal("UUID File (" ~ uuidLocation ~ ") not found, deployment is not enabled, ABORTING!!!");
+            // Fatal throws object.Error
+            return;
+        } else if(!exists(uuidLocation) && this.config.deployment.enabled) {
+            this.logger.warning("UUID File (" ~ uuidLocation ~ ") not found, deployment is enabled, attempting deployment...");
+            doDeployment();
+        }
+
+        if(!exists(authLocation) && !this.config.deployment.enabled) {
+            this.logger.fatal("Auth File (" ~ authLocation ~ ") not found, deployment is not enabled, ABORTING!!!");
+            // Fatal throws object.Error
+            return;
+        } else if(!exists(authLocation) && this.config.deployment.enabled) {
+            this.logger.error("Auth File (" ~ authLocation ~ ") not found, deployment is enabled.");
+            this.logger.fatal("Can't do deployment, UUID file exists but not auth. Delete the UUID file or create the auth file.");
+            // Fatal throws object.Error
+            return;
+        }
     }
 
     public void stop() @safe {
@@ -93,6 +128,7 @@ class Client {
         loadConfig();
 
         logger.info("Starting " ~ SOFTWARE ~ " version " ~ SOFTWARE_VERSION ~ ", implementing API " ~ API_MAJOR ~ "-" ~ API_MINOR);
+        logger.info("Runtime: " ~ RUNTIME);
 
         initalConnect();
 
@@ -101,28 +137,58 @@ class Client {
         logger.info("Shutdown complete.");
      }
 
-     private void initalConnect() {
+     private void doDeployment() {
+
+     }
+
+     private void initalConnect() @trusted {
          import std.net.curl : CurlException;
 
-         string url = this.apiURL ~ "/infoRequest";
-         issueGETRequest(url, (ushort status, string content, CurlException e) {
-            if(!(e is null)) {
-                logger.error("Failed to connect to " ~ url ~ ", CurlException.");
-                logger.trace(e.toString());
-                logger.fatal("Failed to process inital connect!");
-                return;
-            }
+         string url = this.apiURLRoot ~ "/infoRequest";
+         issueGETRequest(url, (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("inital connect", 200, false, false));
 
-            if(status != 200) { // 200: OK
-                logger.error("Failed to connect to " ~ url ~ ", server returned non-200 status code.");
-                logger.fatal("Failed to process inital connect!");
+            if(failure) {
+                logger.warning("Failed to do initalConnect, retrying in 5 seconds...");
+                this.scheduler.registerTask(Task.constructDelayedStartTask(&this.initalConnect, 5000));
                 return;
             }
 
             debug {
                 import std.conv : to;
-                logger.info("Got response: (" ~ to!string(status) ~ "): " ~ content);
+                logger.info("infoRequest, Got response: (" ~ to!string(status) ~ "): " ~ content);
             }
+
+            JSONValue json;
+            try {
+                json = parseJSON(content);
+            } catch(JSONException e) {
+                logger.warning(url ~ " Returned INVALID JSON, retrying in 5 seconds...");
+                this.scheduler.registerTask(Task.constructDelayedStartTask(&this.initalConnect, 5000));
+                return;
+            }
+
+            if(json["apiVersionMajor"].integer != to!int(API_MAJOR)) {
+                this.logger.fatal("Server API_MAJOR version (" ~ to!string(json["apiVersionMajor"].integer) 
+                    ~ ") is incompatible with ours! (" ~ API_MAJOR ~ ")");
+                return;
+            }
+
+            if(json["apiVersionMinor"].integer != to!int(API_MINOR)) {
+                this.logger.warning("Server API_MINOR version (" ~ to!string(json["apiVersionMinor"].integer) 
+                    ~ ") is differs with ours (" ~ API_MAJOR ~ ")");
+            }
+
+            this._serverID = json["serverID"].str;
+
+            this.logger.info("Inital Request to " ~ url ~ " succeeded.");
+            this.requestToken(true);
          });
+     }
+
+     private void requestToken(bool inital = false) @safe {
+        this.logger.info("Requesting new session token...");
+
+        string url = this.apiURL ~ "/session/tokenRequest?";
      }
 }
