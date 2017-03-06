@@ -35,6 +35,38 @@ long getTimeMillis() @system nothrow {
 	}
 }
 
+// THE FOLLOWING CODE IS FROM THE JWTD PROJECT, UNDER THE MIT LICENSE
+// You can find the original project and code here: https://github.com/olehlong/jwtd
+
+/**
+ * Encode a string with URL-safe Base64.
+ */
+string urlsafeB64Encode(string inp) pure nothrow {
+	import std.base64 : Base64URL;
+	import std.string : indexOf;
+
+	auto enc = Base64URL.encode(cast(ubyte[])inp);
+	auto idx = enc.indexOf('=');
+	return cast(string)enc[0..idx > 0 ? idx : $];
+}
+
+/**
+ * Decode a string with URL-safe Base64.
+ */
+string urlsafeB64Decode(string inp) pure {
+	import std.base64 : Base64URL;
+	import std.array : replicate;
+
+	int remainder = inp.length % 4;
+	if(remainder > 0) {
+		int padlen = 4 - remainder;
+		inp ~= replicate("=", padlen);
+	}
+	return cast(string)(Base64URL.decode(cast(ubyte[])inp));
+}
+
+// END JWTD
+
 bool jsonValueToBool(std.json.JSONValue value) {
 	import std.json : JSON_TYPE;
 

@@ -17,7 +17,7 @@ immutable string DEFAULT_CONFIG = "
     \"security\" : {
         \"serverPublicKey\": \"keys/server-pub.pem\",
         \"clientPublicKey\": \"keys/client-pub.pem\",
-        \"clientPrivateKey\": \"keys/server.pem\"
+        \"clientPrivateKey\": \"keys/client.pem\"
     },
     \"deployment\" : {
         \"enable\": false
@@ -59,6 +59,27 @@ void copyDefaultConfig(in string location) @trusted {
     write(location, DEFAULT_CONFIG);
 }
 
+private string adjustKeyPath(in string keyPath, in bool useSystemDirs) {
+    import std.string;
+
+    version(Posix) {
+        if(keyPath.startsWith("/")) {
+            return keyPath;
+        } else {
+            return getConfigDirLocation(useSystemDirs) ~ "/" ~ keyPath;
+        }
+    } else version(Windows) {
+        if(keyPath[1..($ - 1)].startsWith(":\\")) {
+            // Checking if starts with C:\\ or A:\\, etc.
+            return keyPath;
+        } else {
+            return getConfigDirLocation(useSystemDirs) ~ "/" ~ keyPath;
+        }
+    } else {
+        assert(0, "Need to implement key path adjustment for this Operating System!");
+    }
+}
+
 class Configuration {
     NetworkConfiguration network;
     SecurityConfiguration security;
@@ -70,7 +91,7 @@ class Configuration {
         this.deployment = deployment;
     }
 
-    static Configuration load(in string location) {
+    static Configuration load(in string location, in bool useSystemDirs = false) {
         import std.file : exists, readText;
 
         enforce(exists(location), "File does not exist!");
@@ -87,9 +108,9 @@ class Configuration {
         );
 
         SecurityConfiguration sc = SecurityConfiguration(
-            v["security"]["serverPublicKey"].str,
-            v["security"]["clientPublicKey"].str,
-            v["security"]["clientPrivateKey"].str
+            adjustKeyPath(v["security"]["serverPublicKey"].str, useSystemDirs),
+            adjustKeyPath(v["security"]["clientPublicKey"].str, useSystemDirs),
+            adjustKeyPath(v["security"]["clientPrivateKey"].str, useSystemDirs)
         );
 
         DeploymentConfiguration dc = DeploymentConfiguration(jsonValueToBool(v["deployment"]["enable"]));

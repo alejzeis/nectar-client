@@ -6,9 +6,11 @@ import std.conv;
 import std.algorithm;
 import std.experimental.logger;
 
+import core.thread;
 import core.stdc.stdlib : exit;
 
 import nectar_client.logging;
+import nectar_client.jwt;
 import nectar_client.util;
 import nectar_client.config;
 import nectar_client.scheduler;
@@ -31,6 +33,8 @@ class Client {
     }
 
     private {
+        size_t initalConnectTries = 0;
+
         shared string _apiURL;
         shared string _apiURLRoot;
 
@@ -40,6 +44,13 @@ class Client {
         shared Configuration _config;
 
         shared string _serverID;
+
+        shared string _serverPublicKey;
+        shared string _clientPrivateKey;
+        shared string _clientPublicKey;
+
+        shared string _uuid;
+        shared string _authStr;
     }
 
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
@@ -49,6 +60,13 @@ class Client {
 
     @property string apiURL() @trusted nothrow { return cast(string) this._apiURL; }
     @property string apiURLRoot() @trusted nothrow { return cast(string) this._apiURLRoot; }
+
+    @property string serverPublicKey() @trusted nothrow { return cast(string) this._serverPublicKey; }
+    @property string clientPrivateKey() @trusted nothrow { return cast(string) this._clientPrivateKey; }
+    @property string clientPublicKey() @trusted nothrow { return cast(string) this._clientPublicKey; }
+
+    @property string uuid() @trusted nothrow { return cast(string) this._uuid; }
+    @property string authStr() @trusted nothrow { return cast(string) this._authStr; }
 
     public this(bool useSystemDirs) @trusted {
         this.useSystemDirs = useSystemDirs;
@@ -84,8 +102,24 @@ class Client {
         this._apiURLRoot = (this.config.network.useSecure ? "https://" : "http://") ~ this.config.network.serverAddress
                         ~ ":" ~ to!string(this.config.network.serverPort) ~ "/nectar/api";
         this._apiURL = this.apiURLRoot ~ "/v/" ~ API_MAJOR ~ "/" ~ API_MINOR;
+    }
 
-        this.loadUUIDAndAuth();
+    private void loadKeys() @system {
+        string serverPub = this.config.security.serverPublicKey;
+        string clientPrivate = this.config.security.clientPrivateKey;
+        string clientPublic = this.config.security.clientPublicKey;
+
+        if(!exists(serverPub) || !exists(clientPrivate) || !exists(clientPublic)) {
+            this.logger.fatal("Failed to find one or more of the following keys: serverPublic, clientPrivate, clientPublic.");
+            // Fatal throws object.Error
+            return;
+        }
+
+        this._serverPublicKey = readText(serverPub);
+        this._clientPrivateKey = readText(clientPrivate);
+        this._clientPublicKey = readText(clientPublic);
+
+        this.logger.info("Loaded keys.");
     }
 
     private void loadUUIDAndAuth() @system {
@@ -111,6 +145,11 @@ class Client {
             // Fatal throws object.Error
             return;
         }
+
+        this._uuid = readText(uuidLocation);
+        this._authStr = readText(authLocation);
+
+        this.logger.info("Our UUID is " ~ this.uuid);
     }
 
     public void stop() @safe {
@@ -125,12 +164,17 @@ class Client {
         logger.info("Loading libraries...");
         loadLibraries();
 
-        loadConfig();
-
         logger.info("Starting " ~ SOFTWARE ~ " version " ~ SOFTWARE_VERSION ~ ", implementing API " ~ API_MAJOR ~ "-" ~ API_MINOR);
         logger.info("Runtime: " ~ RUNTIME);
 
-        initalConnect();
+        this.loadConfig();
+
+        this.initalConnect();
+
+        this.loadKeys();
+        this.loadUUIDAndAuth();
+
+        this.requestToken(true);
 
         scheduler.doRun();
 
@@ -138,7 +182,57 @@ class Client {
      }
 
      private void doDeployment() {
+        import std.net.curl : CurlException;
+        import std.string : strip;
 
+        string uuidLocation = getConfigDirLocation(useSystemDirs) ~ PATH_SEPARATOR ~ "uuid.txt";
+        string authLocation = getConfigDirLocation(useSystemDirs) ~ PATH_SEPARATOR ~ "auth.txt";
+
+        string deployTokenFile = getConfigDirLocation(this.useSystemDirs) ~ PATH_SEPARATOR ~ "deploy.txt";
+
+        if(!exists(deployTokenFile)) {
+            this.logger.fatal("Deployment token (" ~ deployTokenFile ~ ") not found, aborting!");
+            // Fatal throws object.Error
+            return;
+        }
+
+        string deployTokenRaw = readText(deployTokenFile).strip();
+        if(!verifyJWT(deployTokenRaw, this.serverPublicKey)) {
+            this.logger.fatal("Deployment token (" ~ deployTokenFile ~ ") is not valid! (Failed to pass JWT verification, is it corrupt?)");
+            // Fatal throws object.Error
+            return;
+        }
+
+        string url = this.apiURL ~ "/deploy/deployJoin?token=" ~ deployTokenRaw;
+        issueGETRequest(url, (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("deployment join request", 200, false, false));
+
+            if(failure) {
+                if(status == 503) {
+                    this.logger.fatal("Deployment join request returned 503, deployment is NOT ENABLED ON THE SERVER!");
+                    // fatal throws object.Error
+                    return;
+                } else {
+                    this.logger.fatal("Deployment join request failed!");
+                    // fatal throws object.Error
+                    return;
+                }
+            }
+
+            JSONValue json;
+            try {
+                json = parseJSON(content);
+            } catch(JSONException e) {
+                this.logger.fatal("Deployment join request returned invalid JSON, aborting!");
+                // fatal throws object.Error
+                return;
+            }
+
+            write(uuidLocation, json["uuid"].str);
+            write(authLocation, json["auth"].str);
+
+            this.logger.info("Deployment Succeeded! Our UUID is " ~ json["uuid"].str);
+        });
      }
 
      private void initalConnect() @trusted {
@@ -149,8 +243,17 @@ class Client {
             mixin(RequestErrorHandleMixin!("inital connect", 200, false, false));
 
             if(failure) {
+                if(this.initalConnectTries >= 5) {
+                    this.logger.fatal("Failed to do initalConnect, maximum tries reached.");
+                    return;
+                }
+
                 logger.warning("Failed to do initalConnect, retrying in 5 seconds...");
-                this.scheduler.registerTask(Task.constructDelayedStartTask(&this.initalConnect, 5000));
+                //this.scheduler.registerTask(Task.constructDelayedStartTask(&this.initalConnect, 5000));
+
+                Thread.sleep(5000.msecs);
+                this.initalConnectTries++;
+                this.initalConnect();
                 return;
             }
 
@@ -163,8 +266,17 @@ class Client {
             try {
                 json = parseJSON(content);
             } catch(JSONException e) {
+                if(this.initalConnectTries >= 5) {
+                    logger.fatal(url ~ " Returned INVALID JSON, maximum tries reached.");
+                    return;
+                }
+
                 logger.warning(url ~ " Returned INVALID JSON, retrying in 5 seconds...");
-                this.scheduler.registerTask(Task.constructDelayedStartTask(&this.initalConnect, 5000));
+                //this.scheduler.registerTask(Task.constructDelayedStartTask(&this.initalConnect, 5000));
+
+                Thread.sleep(5000.msecs);
+                this.initalConnectTries++;
+                this.initalConnect();
                 return;
             }
 
@@ -182,7 +294,6 @@ class Client {
             this._serverID = json["serverID"].str;
 
             this.logger.info("Inital Request to " ~ url ~ " succeeded.");
-            this.requestToken(true);
          });
      }
 

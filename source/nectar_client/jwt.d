@@ -13,7 +13,12 @@ in {
     const char *keyPtr = toStringz(key);
 
     // Verify the JWT based on the token and it's algorithm
-    if(jwt_decode(&ptrJwt, tokenPtr, keyPtr, cast(int) key.length) != 0) {
+    auto code = jwt_decode(&ptrJwt, tokenPtr, keyPtr, cast(int) key.length);
+    if(code != 0) {
+        debug {
+            import std.stdio;
+            writeln("jwt_decode returned code ", code);
+        }
         return false;
     }
 
