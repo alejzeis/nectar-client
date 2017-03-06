@@ -297,9 +297,15 @@ class Client {
          });
      }
 
-     private void requestToken(bool inital = false) @safe {
+     private void requestToken(bool inital = false) @trusted {
+        import std.net.curl : CurlException;
+
         this.logger.info("Requesting new session token...");
 
-        string url = this.apiURL ~ "/session/tokenRequest?";
+        string url = this.apiURL ~ "/session/tokenRequest?uuid=" ~ this.uuid ~ "&auth=" ~ this.authStr;
+        issueGETRequest(url, (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("token request", 200, false, false));
+            // TODO
+        });
      }
 }
