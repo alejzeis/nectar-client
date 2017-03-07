@@ -8,6 +8,29 @@ version(Windows) {
 	immutable string PATH_SEPARATOR = "/";
 }
 
+enum ClientState {
+	ONLINE = 0,
+	SHUTDOWN = 1,
+	SLEEP = 2,
+	RESTART = 3,
+	UNKNOWN = 4
+}
+
+static ClientState fromInt(int state) @safe {
+	switch(state) {
+		case 0:
+			return ClientState.ONLINE;
+		case 1:
+			return ClientState.SHUTDOWN;
+		case 2:
+			return ClientState.SLEEP;
+		case 3:
+			return ClientState.RESTART;
+		default:
+			throw new Exception("State is invalid.");
+	}
+}
+
 /**
  * Get the current time in milliseconds (since epoch).
  * This method uses bindings to the C functions gettimeofday and
@@ -82,7 +105,7 @@ bool jsonValueToBool(std.json.JSONValue value) {
 
 import std.net.curl;
 
-template RequestErrorHandleMixin(string operation, int expectedStatusCode, bool fatal, bool doReturn = false) {
+template RequestErrorHandleMixin(string operation, int[] expectedStatusCodes, bool fatal, bool doReturn = false) {
 	const char[] RequestErrorHandleMixin = 
 	"
 	bool failure = false;
@@ -95,7 +118,7 @@ template RequestErrorHandleMixin(string operation, int expectedStatusCode, bool 
 		" ~ (doReturn ? "return;" : "") ~ "
 	}
 
-	if(status != " ~ to!string(expectedStatusCode) ~ ") {
+	if(!canFind(" ~ to!string(expectedStatusCodes) ~ ", status)) {
 		logger.error(\"Failed to connect to \" ~ url ~ \", server returned non-expected status code. (\" ~ to!string(status) ~ \")\");
 		logger." ~ (fatal ? "fatal" : "error") ~ "(\"Failed to process " ~ operation ~ "!\");
 		failure = true;

@@ -38,14 +38,18 @@ class Scheduler {
         this.tasks = DList!Task();
     }
 
-    void registerTask(Task task) @safe nothrow {
-        this.tasks.insertBack(task);
+    void registerTask(Task task, in bool important = false) @safe nothrow {
+        if(important) {
+            this.tasks.insertFront(task);
+        } else {
+            this.tasks.insertBack(task);
+        }
     }
 
     package void doRun() @system {
         while(this.client.running) {
             if(this.tasks.empty) {
-                Thread.sleep(50.msecs);
+                Thread.sleep(1.msecs);
                 continue;
             }
 
@@ -66,7 +70,11 @@ class Scheduler {
             if((getTimeMillis() - task.lastRan) >= task.delay) {
                 task.method();
                 task.lastRan = getTimeMillis();
-                if(!task.repeat) task.enabled = false;
+                if(!task.repeat) {
+                    task.enabled = false;
+                    this.tasks.removeFront(1);
+                    continue;
+                }
             }
 
 finishProcess:

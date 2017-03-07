@@ -183,7 +183,19 @@ class Client {
 
         scheduler.doRun();
 
+        // Shutting down...
+        shutdown();
+
         logger.info("Shutdown complete.");
+     }
+
+     private void shutdown() @trusted {
+        this.switchState(ClientState.SHUTDOWN, false, true);
+
+        // TODO: Determine if restarting or shutdown.
+
+        //std.file.remove
+        remove(getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt"); // TODO: Delete saved token only if not restarting.
      }
 
      private void doDeployment() {
@@ -210,7 +222,7 @@ class Client {
 
         string url = this.apiURL ~ "/deploy/deployJoin?token=" ~ deployTokenRaw;
         issueGETRequest(url, (ushort status, string content, CurlException ce) {
-            mixin(RequestErrorHandleMixin!("deployment join request", 200, false, false));
+            mixin(RequestErrorHandleMixin!("deployment join request", [200], false, false));
 
             if(failure) {
                 if(status == 503) {
@@ -245,7 +257,7 @@ class Client {
 
          string url = this.apiURLRoot ~ "/infoRequest";
          issueGETRequest(url, (ushort status, string content, CurlException ce) {
-            mixin(RequestErrorHandleMixin!("inital connect", 200, false, false));
+            mixin(RequestErrorHandleMixin!("inital connect", [200], false, false));
 
             if(failure) {
                 if(this.initalConnectTries >= 5) {
@@ -335,25 +347,30 @@ class Client {
                     this.logger.warning("Loaded token from disk, but it has expired.");
                     this._requestToken(inital, savedTokenLocation);
                     return;
+                } else if(json["serverID"].str != this._serverID) {
+                    this.logger.warning("Loaded token from disk, but has a different serverID.");
+                    this._requestToken(inital, savedTokenLocation);
+                    return;
                 } else {
                     this.logger.info("Loaded token from disk!");
 
                     this._sessionToken = savedTokenContents;
 
-                    // TODO: DO SWITCHSTATE
+                    this.switchState(ClientState.ONLINE, true);
 
                     // Set up repeating task to "renew" token.
-                    this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, expires + 1000, false));
+                    this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, expires + 1000, false), true);
 
                     return; // Done!
                 }
             }
         } else {
             this._requestToken(inital, savedTokenLocation);
+            this.switchState(ClientState.ONLINE, true);
         }
      }
 
-     private void _requestToken(in bool inital, in string savedTokenLocation) {
+    private void _requestToken(in bool inital, in string savedTokenLocation) {
         import std.net.curl : CurlException;
 
         string url = this.apiURL ~ "/session/tokenRequest?uuid=" ~ this.uuid ~ "&auth=" ~ this.authStr;
@@ -361,7 +378,7 @@ class Client {
         this.logger.info("Requesting new session token...");
 
         issueGETRequest(url, (ushort status, string content, CurlException ce) {
-            mixin(RequestErrorHandleMixin!("token request", 200, false, false));
+            mixin(RequestErrorHandleMixin!("token request", [200], false, false));
 
             if(failure) {
                 this.logger.warning("Retrying token request...");
@@ -380,7 +397,7 @@ class Client {
             if(!verifyJWT(content.strip(), this.serverPublicKey)) {
                 this.logger.error("Failed to verify Session Token from server, retrying...");
 
-                 // Repeating renew task will handle it, unless inital
+                // Repeating renew task will handle it, unless inital
 
                 if(inital)
                     this.scheduler.registerTask(Task.constructDelayedStartTask(() {
@@ -407,7 +424,7 @@ class Client {
             // Set up repeating task to "renew" token.
 
             if(inital)
-                this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, json["expires"].integer + 1000, false));
+                this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, json["expires"].integer + 1000, false), true);
 
             this._sessionToken = content.strip();
 
@@ -415,5 +432,37 @@ class Client {
             write(savedTokenLocation, content); // Save token to disk
             this.logger.info("Got new token from server (saved to disk).");
         });
-     }
+    }
+
+    private void switchState(in ClientState state, in bool inital = false, in bool isShutdown = false) {
+        import std.net.curl : CurlException;
+
+        string url = this.apiURL ~ "/session/updateState?token=" ~ this.sessionToken ~ "&state=" ~ to!string(to!int(state));
+        issueGETRequest(url, (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("switch state", [204, 304], false, false));
+            // Accepting 204 (NO CONTENT) and 304 (NOT MODIFIED)
+            // 304 is also success, as that means the state is already the state we are switching to.
+
+            if(failure) {
+                if(isShutdown) {
+                    this.logger.error("Failed to switch state!");
+                    return;
+                } else {
+                    if(inital && status == 403) {
+                        this.logger.warning("Perhaps the token is bad? Requesting new...");
+                        this.requestToken(false);
+                        return;
+                    } else {
+                        this.logger.warning("Retrying switch state in 2 seconds...");
+                        this.scheduler.registerTask(Task.constructDelayedStartTask(() {
+                            switchState(state);
+                        }, 2000));
+                        return;
+                    }
+                }
+            } else {
+                this.logger.info("Switched state to " ~ to!string(state));
+            }
+        });
+    }
 }
