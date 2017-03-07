@@ -3,6 +3,7 @@ module nectar_client.client;
 import std.json;
 import std.file;
 import std.conv;
+import std.string;
 import std.algorithm;
 import std.experimental.logger;
 
@@ -51,6 +52,8 @@ class Client {
 
         shared string _uuid;
         shared string _authStr;
+
+        shared string _sessionToken;
     }
 
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
@@ -67,6 +70,8 @@ class Client {
 
     @property string uuid() @trusted nothrow { return cast(string) this._uuid; }
     @property string authStr() @trusted nothrow { return cast(string) this._authStr; }
+
+    @property string sessionToken() @trusted nothrow { return cast(string) this._sessionToken; }
 
     public this(bool useSystemDirs) @trusted {
         this.useSystemDirs = useSystemDirs;
@@ -110,7 +115,7 @@ class Client {
         string clientPublic = this.config.security.clientPublicKey;
 
         if(!exists(serverPub) || !exists(clientPrivate) || !exists(clientPublic)) {
-            this.logger.fatal("Failed to find one or more of the following keys: serverPublic, clientPrivate, clientPublic.");
+            this.logger.fatal("Failed to find one or more of the following security keys: serverPublic, clientPrivate, clientPublic.");
             // Fatal throws object.Error
             return;
         }
@@ -300,12 +305,115 @@ class Client {
      private void requestToken(bool inital = false) @trusted {
         import std.net.curl : CurlException;
 
-        this.logger.info("Requesting new session token...");
+        string savedTokenLocation = getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt";
+
+        if(inital && exists(savedTokenLocation)) {
+            // Attempt to load token from disk
+            string savedTokenContents = readText(savedTokenLocation).strip();
+            if(!verifyJWT(savedTokenContents, this.serverPublicKey)) {
+                this.logger.warning("Loaded token from disk, but failed to verify.");
+                this._requestToken(inital, savedTokenLocation);
+                return;
+            } else {
+                JSONValue json;
+                try{
+                    json = parseJSON(getJWTPayload(savedTokenContents));
+                } catch(JSONException e) {
+                    this.logger.warning("Loaded token from disk, but failed to parse JSON from payload.");
+                    this._requestToken(inital, savedTokenLocation);
+                    return;
+                } catch(Exception e) {
+                    this.logger.warning("Loaded token from disk, but failed to get payload and parse JSON.");
+                    this._requestToken(inital, savedTokenLocation);
+                    return;
+                }
+
+                ulong timestamp = json["timestamp"].integer;
+                ulong expires = json["expires"].integer;
+
+                if(getTimeMillis() - timestamp >= expires) {
+                    this.logger.warning("Loaded token from disk, but it has expired.");
+                    this._requestToken(inital, savedTokenLocation);
+                    return;
+                } else {
+                    this.logger.info("Loaded token from disk!");
+
+                    this._sessionToken = savedTokenContents;
+
+                    // TODO: DO SWITCHSTATE
+
+                    // Set up repeating task to "renew" token.
+                    this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, expires + 1000, false));
+
+                    return; // Done!
+                }
+            }
+        } else {
+            this._requestToken(inital, savedTokenLocation);
+        }
+     }
+
+     private void _requestToken(in bool inital, in string savedTokenLocation) {
+        import std.net.curl : CurlException;
 
         string url = this.apiURL ~ "/session/tokenRequest?uuid=" ~ this.uuid ~ "&auth=" ~ this.authStr;
+
+        this.logger.info("Requesting new session token...");
+
         issueGETRequest(url, (ushort status, string content, CurlException ce) {
             mixin(RequestErrorHandleMixin!("token request", 200, false, false));
-            // TODO
+
+            if(failure) {
+                this.logger.warning("Retrying token request...");
+
+                // Repeating renew task will handle it, unless inital
+
+                if(inital)
+                    this.scheduler.registerTask(Task.constructDelayedStartTask(() {
+                        requestToken(inital);
+                    }, 1500));
+                return;
+            }
+
+            debug this.logger.info("Got tokenRequest response from server (" ~ to!string(status) ~ ")");
+
+            if(!verifyJWT(content.strip(), this.serverPublicKey)) {
+                this.logger.error("Failed to verify Session Token from server, retrying...");
+
+                 // Repeating renew task will handle it, unless inital
+
+                if(inital)
+                    this.scheduler.registerTask(Task.constructDelayedStartTask(() {
+                        requestToken(inital);
+                    }, 1500));
+                return;
+            }
+
+            JSONValue json;
+            try {
+                json = parseJSON(getJWTPayload(content.strip()));
+            } catch(JSONException e) {
+                this.logger.error("Failed to parse Session Token JSON from server, retrying...");
+
+                // Repeating task will handle it, unless inital
+
+                if(inital)
+                    this.scheduler.registerTask(Task.constructDelayedStartTask(() {
+                        requestToken(inital);
+                    }, 1500));
+                return;
+            }
+
+            // Set up repeating task to "renew" token.
+
+            if(inital)
+                this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, json["expires"].integer + 1000, false));
+
+            this._sessionToken = content.strip();
+
+            //std.file.write
+            write(savedTokenLocation, content); // Save token to disk
+            this.logger.info("Got new token from server (saved to disk).");
         });
      }
 }

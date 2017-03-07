@@ -16,15 +16,16 @@ struct Task {
     ulong delay;
     bool repeat;
     bool enabled;
+    bool startRightAway;
 
     package ulong lastRan;
 
-    static Task constructRepeatingTask(TaskMethod method, ulong interval) @safe nothrow {
-        return Task(method, interval, true, true, 0);
+    static Task constructRepeatingTask(TaskMethod method, ulong interval, in bool startRightAway = true) @safe nothrow {
+        return Task(method, interval, true, true, startRightAway, 0);
     }
 
     static Task constructDelayedStartTask(TaskMethod method, ulong delay) @trusted nothrow {
-        return Task(method, delay, false, true, getTimeMillis());
+        return Task(method, delay, false, true, false, getTimeMillis());
     }
 }
 
@@ -55,7 +56,9 @@ class Scheduler {
             }
 
             if(task.lastRan == 0) {
-                task.method();
+                if(task.startRightAway) {
+                    task.method();
+                }
                 task.lastRan = getTimeMillis();
                 goto finishProcess;
             }

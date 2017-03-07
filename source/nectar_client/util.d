@@ -96,7 +96,7 @@ template RequestErrorHandleMixin(string operation, int expectedStatusCode, bool 
 	}
 
 	if(status != " ~ to!string(expectedStatusCode) ~ ") {
-		logger.error(\"Failed to connect to \" ~ url ~ \", server returned non-200 status code.\");
+		logger.error(\"Failed to connect to \" ~ url ~ \", server returned non-expected status code. (\" ~ to!string(status) ~ \")\");
 		logger." ~ (fatal ? "fatal" : "error") ~ "(\"Failed to process " ~ operation ~ "!\");
 		failure = true;
 		" ~ (doReturn ? "return;" : "") ~ "

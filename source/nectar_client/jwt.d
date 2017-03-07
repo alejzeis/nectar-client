@@ -1,8 +1,20 @@
 module nectar_client.jwt;
 
 import std.string : toStringz, fromStringz;
+import std.exception : enforce;
 
 import derelict.jwt.jwt;
+
+import nectar_client.util : urlsafeB64Decode;
+
+string getJWTPayload(in string jwt) {
+    import std.string;
+
+    string[] exploded = jwt.split(".");
+    enforce(exploded.length == 3, "Invalid JWT, missing (.)?");
+
+    return urlsafeB64Decode(exploded[1]);
+}
 
 bool verifyJWT(in string jwt, in string key, in jwt_alg_t expectedAlg = JWT_ALG_ES384) 
 in {
