@@ -1,6 +1,7 @@
 module nectar_client.util;
 
 import std.conv : to;
+import std.json;
 
 version(Windows) {
 	immutable string PATH_SEPARATOR = "\\";
@@ -55,6 +56,73 @@ long getTimeMillis() @system nothrow {
 		return (time.wSecond * 1000) + time.wMilliseconds;
 	} else {
 		pragma(msg, "Need to implement getTimeMillis() for this platform!");
+	}
+}
+
+JSONValue getUpdatesInfo() {
+	import std.stdio : File;
+	import std.file : readText;
+	import std.string;
+	import std.process;
+
+	JSONValue root = JSONValue();
+
+	version(linux) {
+		File tmpOut = createNewTmpSTDIOFile("nectar-client-apt-check-output.txt");
+
+		try {
+			auto pid = spawnProcess(["/usr/lib/update-notifier/apt-check"], std.stdio.stdin, tmpOut, tmpOut);
+
+			if(wait(pid) != 0) {
+				// Process exited with non-zero exit code, set to unknown.
+				root["securityUpdates"] = -1;
+				root["otherUpdates"] = -1;
+			} else {
+				tmpOut.close();
+				string[] exploded = readText(tmpOut.name).split(";");
+				root["securityUpdates"] = to!int(exploded[0]);
+				root["otherUpdates"] = to!int(exploded[1]);
+			}
+		} catch(ProcessException e) {
+			// Failed to get the update count, set to unknown then.
+			root["securityUpdates"] = -1;
+			root["otherUpdates"] = -1;	
+		}
+	} else {
+		pragma(msg, "WARN: getUpdatesInfo() only supports Linux currently.");
+
+		root["securityUpdates"] = -1;
+		root["otherUpdates"] = -1;
+	}
+
+	return root;
+}
+
+std.stdio.File createNewTmpSTDIOFile(in string name) @system {
+	import std.stdio : File;
+
+	return File(getTempDirectoryPath() ~ PATH_SEPARATOR ~ name, "w");
+}
+
+string getTempDirectoryPath() @system {
+	version(Posix) {
+		import core.stdc.stdlib : getenv;
+		import std.string: toStringz, fromStringz;
+
+		auto env = fromStringz(getenv(toStringz("TMPDIR")));
+		if(env == "") {
+			return "/tmp";
+		} else return cast(string) env;
+	} else version(Windows) {
+		import core.sys.windows.winbase : GetTempPath, DWORD;
+		
+		void[] data = new void[256];
+		DWORD length = GetTempPath(256, data);
+		return cast(string) fromStringz(cast(char[]) data[0..length]);
+	} else {
+		pragma(msg, "WARN: Need to implement getTempDirectoryPath() correctly for this operating system.");
+		
+		return "tmp"; // From current directory
 	}
 }
 

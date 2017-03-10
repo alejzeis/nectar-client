@@ -218,11 +218,11 @@ class Client {
         remove(getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt"); // TODO: Delete saved token only if not restarting.
      }
 
-     private void processMessageFromServiceProcess(in string message) {
+     private void processMessageFromServiceProcess(in string message) @safe {
         // TODO: Process service messages.
      }
 
-     private void doDeployment() {
+     private void doDeployment() @trusted {
         import std.net.curl : CurlException;
         import std.string : strip;
 
@@ -384,6 +384,8 @@ class Client {
 
                     // Set up repeating task to "renew" token.
                     this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, expires + 1000, false), true);
+                    // Set up task to periodically ping the server and sync our status.
+                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, 15000), true);
 
                     return; // Done!
                 }
@@ -394,7 +396,7 @@ class Client {
         }
      }
 
-    private void _requestToken(in bool inital, in string savedTokenLocation) {
+    private void _requestToken(in bool inital, in string savedTokenLocation) @system {
         import std.net.curl : CurlException;
 
         string url = this.apiURL ~ "/session/tokenRequest?uuid=" ~ this.uuid ~ "&auth=" ~ this.authStr;
@@ -445,10 +447,12 @@ class Client {
                 return;
             }
 
-            // Set up repeating task to "renew" token.
-
-            if(inital)
+            if(inital) {
+                // Set up repeating task to "renew" token.
                 this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, json["expires"].integer + 1000, false), true);
+                // Set up task to periodically ping the server and sync our status.
+                this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, 15000), true);
+            }
 
             this._sessionToken = content.strip();
 
@@ -458,7 +462,7 @@ class Client {
         });
     }
 
-    private void switchState(in ClientState state, in bool inital = false, in bool isShutdown = false) {
+    private void switchState(in ClientState state, in bool inital = false, in bool isShutdown = false) @trusted {
         import std.net.curl : CurlException;
 
         string url = this.apiURL ~ "/session/updateState?token=" ~ this.sessionToken ~ "&state=" ~ to!string(to!int(state));
@@ -487,6 +491,23 @@ class Client {
             } else {
                 this.logger.info("Switched state to " ~ to!string(state));
             }
+        });
+    }
+
+    private void sendPing() @trusted {
+        import std.net.curl : CurlException;
+
+        string url = this.apiURL ~ "/session/clientPing?token=" ~ this.sessionToken ~ "&data=" ~ urlsafeB64Encode(getUpdatesInfo().toString());
+        issueGETRequest(url, (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("send client ping", [204], false, false));
+
+            if(failure) {
+                this.logger.warning("Retrying send ping in 2 seconds...");
+                this.scheduler.registerTask(Task.constructDelayedStartTask(&this.sendPing, 2000));
+                return;
+            }
+
+            debug this.logger.info("Send ping request.");
         });
     }
 }
