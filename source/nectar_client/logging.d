@@ -6,15 +6,17 @@ import std.experimental.logger;
 import std.file : exists, append, remove;
 
 class NectarLogger : Logger {
+    private immutable bool writeStdout;
     private immutable string logFileLocation;
 
-    this(LogLevel level, in string logFileLocation = null) @trusted {
+    this(LogLevel level, in string logFileLocation = null, in bool writeStdout = true) @trusted {
         import consoled : title;
         super(level);
 
-        title = "Nectar-Client";
+        if(writeStdout) title = "Nectar-Client";
 
         this.logFileLocation = logFileLocation;
+        this.writeStdout = writeStdout;
 
         if(!(this.logFileLocation is null)) {
             if(exists(this.logFileLocation)) {
@@ -29,17 +31,20 @@ class NectarLogger : Logger {
 
         string msg = getTimeString() ~ " [" ~ levelToStr(payload.logLevel) ~ "/" ~ to!string(payload.threadId) ~ "]: " ~ payload.msg;
         
-        auto old = foreground;
-        
-        writec(Fg.white, getTimeString(), " [");
+        if(writeStdout) {
 
-        levelToStr(payload.logLevel, true);
+            auto old = foreground;
+            
+            writec(Fg.white, getTimeString(), " [");
 
-        writec(FontStyle.none, Fg.white, "/", Fg.lightBlue, payload.threadId, Fg.white, "]: ");
+            levelToStr(payload.logLevel, true);
 
-        foreground = old;
+            writec(FontStyle.none, Fg.white, "/", Fg.lightBlue, payload.threadId, Fg.white, "]: ");
 
-        write(payload.msg ~ "\n");
+            foreground = old;
+
+            write(payload.msg ~ "\n");
+        }
 
         if(!(this.logFileLocation is null)) {
             append(this.logFileLocation, msg ~ "\n");

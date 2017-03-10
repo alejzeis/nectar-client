@@ -5,6 +5,7 @@ import std.file;
 import std.conv;
 import std.string;
 import std.algorithm;
+import std.concurrency : Tid, spawn, receiveTimeout;
 import std.experimental.logger;
 
 import core.thread;
@@ -15,6 +16,7 @@ import nectar_client.jwt;
 import nectar_client.util;
 import nectar_client.config;
 import nectar_client.scheduler;
+import nectar_client.service;
 
 immutable string SOFTWARE = "Nectar-Client";
 immutable string SOFTWARE_VERSION = "1.0.0-alpha1";
@@ -29,11 +31,15 @@ class Client {
     ++/
     immutable bool useSystemDirs;
 
+    immutable bool isService;
+
     package {
         shared bool running = false;
     }
 
     private {
+        shared Tid consoleListenTid;
+
         size_t initalConnectTries = 0;
 
         shared string _apiURL;
@@ -73,10 +79,24 @@ class Client {
 
     @property string sessionToken() @trusted nothrow { return cast(string) this._sessionToken; }
 
-    public this(bool useSystemDirs) @trusted {
+    public this(in bool useSystemDirs, in bool isService) @trusted {
         this.useSystemDirs = useSystemDirs;
-        this._logger = cast(shared) new NectarLogger(LogLevel.trace, getLogLocation(useSystemDirs));
+        this.isService = isService;
+
+        this._logger = cast(shared) new NectarLogger(LogLevel.trace, getLogLocation(useSystemDirs), isService ? false : true);
         this._scheduler = cast(shared) new Scheduler(this);
+
+        this.logger.info("SERVICE MODE: " ~ to!string(isService));
+
+        if(isService) {
+            // nectar_client.service
+            this.consoleListenTid = cast(shared) spawn(&consoleListenThread);
+            this.scheduler.registerTask(Task.constructRepeatingTask(() {
+                receiveTimeout(5.msecs, (string message) {
+                    processMessageFromServiceProcess(message);
+                });
+            }, 100));
+        }
     }
 
     private void loadLibraries() @system {
@@ -196,6 +216,10 @@ class Client {
 
         //std.file.remove
         remove(getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt"); // TODO: Delete saved token only if not restarting.
+     }
+
+     private void processMessageFromServiceProcess(in string message) {
+        // TODO: Process service messages.
      }
 
      private void doDeployment() {
