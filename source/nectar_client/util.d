@@ -114,11 +114,12 @@ string getTempDirectoryPath() @system {
 			return "/tmp";
 		} else return cast(string) env;
 	} else version(Windows) {
-		import core.sys.windows.winbase : GetTempPath, DWORD;
+		import core.sys.windows.winbase : GetTempPath, DWORD, TCHAR;
+		import std.string : fromStringz;
 		
-		void[] data = new void[256];
-		DWORD length = GetTempPath(256, data);
-		return cast(string) fromStringz(cast(char[]) data[0..length]);
+		TCHAR[256] data;
+		DWORD length = GetTempPath(256, data.ptr);
+		return cast(string) fromStringz(cast(char*) data[0..length].ptr);
 	} else {
 		pragma(msg, "WARN: Need to implement getTempDirectoryPath() correctly for this operating system.");
 		
