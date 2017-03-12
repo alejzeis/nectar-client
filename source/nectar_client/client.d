@@ -285,7 +285,8 @@ class Client {
 
             if(failure) {
                 if(this.initalConnectTries >= 5) {
-                    this.logger.fatal("Failed to do initalConnect, maximum tries reached.");
+                    this.logger.error("Failed to do initalConnect, maximum tries reached.");
+					exit(1);
                     return;
                 }
 
@@ -308,7 +309,8 @@ class Client {
                 json = parseJSON(content);
             } catch(JSONException e) {
                 if(this.initalConnectTries >= 5) {
-                    logger.fatal(url ~ " Returned INVALID JSON, maximum tries reached.");
+                    logger.error(url ~ " Returned INVALID JSON, maximum tries reached.");
+					exit(1);
                     return;
                 }
 

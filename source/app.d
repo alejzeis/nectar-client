@@ -5,6 +5,7 @@ import consoled;
 import nectar_client.client;
 import nectar_client.util;
 import nectar_client.scheduler;
+import nectar_client.service;
 
 void main(string[] args) @system {
 	Client client = null;
@@ -16,6 +17,8 @@ void main(string[] args) @system {
 	if(args.length > 1) {
 		if(args[1] == "--service") {
 			isService = true;
+		} else if(args[1] == "--winservice"){
+			runWindowsServiceWatcher();
 		}
 	}
 
@@ -32,4 +35,64 @@ private bool ifUseSystemDirs() @system {
 		return true;
 	else
 		return false;
+}
+
+private void runWindowsServiceWatcher() @system {
+	import core.stdc.stdlib : exit;
+	import core.thread;
+	
+	import std.concurrency;
+	import std.datetime;
+	import std.process;
+	import std.string;
+	
+	version(Windows) {
+		bool signaledTerminate = false;
+		//Pid pid;
+		ProcessPipes pipes;
+		while(true) {
+			//toFile("", getTempDirectoryPath() ~ "//nectar-client-winservice-stdin.txt");
+		
+			//File stdout = createNewTmpSTDIOFile("nectar-client-winservice-stdout.txt");
+			//File stdin = createNewTmpSTDIOFile("nectar-client-winservice-stdin.txt", "r");
+			
+			//pid = spawnProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], stdin, stdout);
+			pipes = pipeProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], Redirect.stdin);
+			
+			auto tid = spawn(&consoleListenThread);
+			
+			while(true) {
+				auto status = tryWait(pipes.pid);
+				if(status.terminated && !signaledTerminate) {
+					//pid = spawnProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], stdin, stdout);
+					pipes = pipeProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], Redirect.stdin);
+					writeln("Restarted.");
+					// Restart process
+				}
+				
+				receiveTimeout(200.msecs, (string message) {
+					message = message.strip();
+                    if(message == "POWER-SUSPEND" || message == "SERVICESTOP") {
+						signaledTerminate = true;
+					}
+					//toFile(message, stdin.name);
+					pipes.stdin.writeln(message);
+					pipes.stdin.flush();
+					if(signaledTerminate) {
+						Thread.sleep(3000.msecs);
+						if(!tryWait(pipes.pid).terminated) {
+							kill(pipes.pid);
+							writeln("Killed.");
+							exit(2);
+						} else {
+							exit(0);
+						}
+					}
+                });
+			}
+		}
+	} else {
+		writeln("Can't run as windows service watcher on a non-windows operating system!");
+		exit(1);
+	}
 }

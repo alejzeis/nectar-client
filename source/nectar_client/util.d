@@ -98,10 +98,10 @@ JSONValue getUpdatesInfo() {
 	return root;
 }
 
-std.stdio.File createNewTmpSTDIOFile(in string name) @system {
+std.stdio.File createNewTmpSTDIOFile(in string name, in string mode = "w") @system {
 	import std.stdio : File;
 
-	return File(getTempDirectoryPath() ~ PATH_SEPARATOR ~ name, "w");
+	return File(getTempDirectoryPath() ~ PATH_SEPARATOR ~ name, mode);
 }
 
 string getTempDirectoryPath() @system {
@@ -117,9 +117,10 @@ string getTempDirectoryPath() @system {
 		import core.sys.windows.winbase : GetTempPath, DWORD, TCHAR;
 		import std.string : fromStringz;
 		
-		TCHAR[256] data;
-		DWORD length = GetTempPath(256, data.ptr);
-		return cast(string) fromStringz(cast(char*) data[0..length].ptr);
+		//TCHAR[128] data;
+		//DWORD length = GetTempPath(128, data.ptr);
+		//return cast(string) fromStringz(cast(char*) data[0..length].ptr);
+		return "C:\\Windows\\Temp";
 	} else {
 		pragma(msg, "WARN: Need to implement getTempDirectoryPath() correctly for this operating system.");
 		
