@@ -76,23 +76,23 @@ JSONValue getUpdatesInfo() {
 			if(wait(pid) != 0) {
 				// Process exited with non-zero exit code, set to unknown.
 				root["securityUpdates"] = -1;
-				root["otherUpdates"] = -1;
+				root["updates"] = -1;
 			} else {
 				tmpOut.close();
 				string[] exploded = readText(tmpOut.name).split(";");
-				root["securityUpdates"] = to!int(exploded[0]);
-				root["otherUpdates"] = to!int(exploded[1]);
+				root["securityUpdates"] = to!int(exploded[1]);
+				root["updates"] = to!int(exploded[0]);
 			}
 		} catch(ProcessException e) {
 			// Failed to get the update count, set to unknown then.
 			root["securityUpdates"] = -1;
-			root["otherUpdates"] = -1;	
+			root["updates"] = -1;	
 		}
 	} else {
 		pragma(msg, "WARN: getUpdatesInfo() only supports Linux currently.");
 
 		root["securityUpdates"] = -1;
-		root["otherUpdates"] = -1;
+		root["updates"] = -1;
 	}
 
 	return root;

@@ -21,8 +21,8 @@ import nectar_client.service;
 immutable string SOFTWARE = "Nectar-Client";
 immutable string SOFTWARE_VERSION = "1.0.0-alpha1";
 immutable string RUNTIME = "DRUNTIME, compiled by " ~ __VENDOR__ ~ ", version " ~ to!string(__VERSION__);
-immutable string API_MAJOR = "2";
-immutable string API_MINOR = "3";
+immutable string API_MAJOR = "3";
+immutable string API_MINOR = "1";
 
 class Client {
     /++
