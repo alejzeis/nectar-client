@@ -3,10 +3,17 @@ module nectar_client.util;
 import std.conv : to;
 import std.json;
 
+immutable string TIMEZONE_MAPPINGS_URL = "https://gist.githubusercontent.com/jython234/ad5827eb14b5c22109ba652a1a267af5/raw/9769d8a1fe06aaac660ea7148c1fcf6ad1ebb160/timezone-mappings.csv";
+
 version(Windows) {
 	immutable string PATH_SEPARATOR = "\\";
 } else {
 	immutable string PATH_SEPARATOR = "/";
+}
+
+@safe unittest {
+	assert(convertTZLinuxToWindows("America/Chicago") == "Central Standard Time");
+	assert(convertTZWindowsToLinux("Central Standard Time") == "America/Chicago");
 }
 
 enum ClientState {
@@ -39,7 +46,7 @@ static ClientState fromInt(int state) @safe {
  */
 long getTimeMillis() @system nothrow {
 	version(Posix) {
-		pragma(msg, "Using core.sys.posix.sys.time.gettimeofday() for getTimeMillis()");
+		pragma(msg, "INFO: Using core.sys.posix.sys.time.gettimeofday() for getTimeMillis()");
 		import core.sys.posix.sys.time;
 
 		timeval t;
@@ -47,7 +54,7 @@ long getTimeMillis() @system nothrow {
 		
 		return (t.tv_sec) * 1000 + (t.tv_usec) / 1000;
 	} else version(Windows) {
-		pragma(msg, "Using core.sys.windows.winbase.GetSystemTime() for getTimeMillis()");
+		pragma(msg, "INFO: Using core.sys.windows.winbase.GetSystemTime() for getTimeMillis()");
 		import core.sys.windows.winbase : SYSTEMTIME, GetSystemTime;
 		
 		SYSTEMTIME time;
@@ -55,7 +62,8 @@ long getTimeMillis() @system nothrow {
 		
 		return (time.wSecond * 1000) + time.wMilliseconds;
 	} else {
-		pragma(msg, "Need to implement getTimeMillis() for this platform!");
+		//pragma(msg, "Need to implement getTimeMillis() for this platform!");
+		assert(0, "Need to implement getTimeMillis() for this platform!");
 	}
 }
 
@@ -68,18 +76,18 @@ JSONValue getUpdatesInfo() {
 	JSONValue root = JSONValue();
 
 	version(linux) {
-		File tmpOut = createNewTmpSTDIOFile("nectar-client-apt-check-output.txt");
+		//File tmpOut = createNewTmpSTDIOFile("nectar-client-apt-check-output.txt");
 
 		try {
-			auto pid = spawnProcess(["/usr/lib/update-notifier/apt-check"], std.stdio.stdin, tmpOut, tmpOut);
+			//auto pid = spawnProcess(["/usr/lib/update-notifier/apt-check"], std.stdio.stdin, tmpOut, tmpOut);
+			auto pipes = pipeProcess(["/usr/lib/update-notifier/apt-check"], Redirect.stdout);
 
-			if(wait(pid) != 0) {
+			if(wait(pipes.pid) != 0) {
 				// Process exited with non-zero exit code, set to unknown.
 				root["securityUpdates"] = -1;
 				root["updates"] = -1;
 			} else {
-				tmpOut.close();
-				string[] exploded = readText(tmpOut.name).split(";");
+				string[] exploded = pipes.stdout.readln().split(";");
 				root["securityUpdates"] = to!int(exploded[1]);
 				root["updates"] = to!int(exploded[0]);
 			}
@@ -126,6 +134,56 @@ string getTempDirectoryPath() @system {
 		
 		return "tmp"; // From current directory
 	}
+}
+
+string convertTZLinuxToWindows(in string linuxTZ) @trusted {
+	import std.file : exists, readText;
+	import std.csv : csvReader;
+	import std.net.curl : download;
+	import std.typecons : Tuple;
+
+	string mappingsFile = getTempDirectoryPath() ~ PATH_SEPARATOR ~ "nectar-client-timezone-mappings.csv";
+	if(!exists(mappingsFile)) {
+		try {
+			download(TIMEZONE_MAPPINGS_URL, mappingsFile);
+		} catch(Exception e) {
+			throw new Exception("Failed to download Timezone mappings from " ~ TIMEZONE_MAPPINGS_URL);
+		}
+	}
+
+	auto content = readText(mappingsFile);
+	foreach(record; csvReader!(Tuple!(string, string, string))(content)) {
+		if(record[2] == linuxTZ) {
+			return record[0];
+		}
+	}
+
+	return "Unknown";
+}
+
+string convertTZWindowsToLinux(in string windowsTZ) @trusted {
+	import std.file : exists, readText;
+	import std.csv : csvReader;
+	import std.net.curl : download;
+	import std.typecons : Tuple;
+
+	string mappingsFile = getTempDirectoryPath() ~ PATH_SEPARATOR ~ "nectar-client-timezone-mappings.csv";
+	if(!exists(mappingsFile)) {
+		try {
+			download(TIMEZONE_MAPPINGS_URL, mappingsFile);
+		} catch(Exception e) {
+			throw new Exception("Failed to download Timezone mappings from " ~ TIMEZONE_MAPPINGS_URL);
+		}
+	}
+
+	auto content = readText(mappingsFile);
+	foreach(record; csvReader!(Tuple!(string, string, string))(content)) {
+		if(record[0] == windowsTZ) {
+			return record[2];
+		}
+	}
+
+	return "Unknown";
 }
 
 // THE FOLLOWING CODE IS FROM THE JWTD PROJECT, UNDER THE MIT LICENSE

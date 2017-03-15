@@ -17,6 +17,7 @@ import nectar_client.util;
 import nectar_client.config;
 import nectar_client.scheduler;
 import nectar_client.service;
+import nectar_client.operation;
 
 immutable string SOFTWARE = "Nectar-Client";
 immutable string SOFTWARE_VERSION = "1.0.0-alpha1";
@@ -60,6 +61,12 @@ class Client {
         shared string _authStr;
 
         shared string _sessionToken;
+
+        shared OperationStatus currentOperationStatus;
+        shared ptrdiff_t currentOperation = -1;
+        shared size_t nextOperation = 0;
+        shared Operation[size_t] _operationQueue;
+        shared Tid _operationProcessingTid;
     }
 
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
@@ -79,6 +86,9 @@ class Client {
 
     @property string sessionToken() @trusted nothrow { return cast(string) this._sessionToken; }
 
+    @property Operation[size_t] operationQueue() @trusted nothrow { return cast(Operation[size_t]) this._operationQueue; }
+    @property Tid operationProcessingTid() @trusted nothrow { return cast(Tid) this._operationProcessingTid; }
+
     public this(in bool useSystemDirs, in bool isService) @trusted {
         this.useSystemDirs = useSystemDirs;
         this.isService = isService;
@@ -97,6 +107,8 @@ class Client {
                 });
             }, 100));
         }
+
+        this.scheduler.registerTask(Task.constructRepeatingTask(&this.processOperationsQueue, 100));
     }
 
     private void loadLibraries() @system {
@@ -219,7 +231,47 @@ class Client {
      }
 
      private void processMessageFromServiceProcess(in string message) @safe {
-        // TODO: Process service messages.
+        // TODO: Process more service messages.
+        if(message == "SERVICESTOP") {
+            this.stop();
+        }
+     }
+
+     /++
+        Checks the operations queue for new operations to process, and if there is
+        one currently processing, checks for messages from it's worker thread.
+     +/
+     private void processOperationsQueue() @trusted {
+        if(this.operationQueue.length < 1) return;
+
+        if(this.currentOperation == -1) {
+            // Queue is not empty, but we are not processing anything. Need to process nextOperation.
+            Operation toProcess = this.operationQueue[this.nextOperation++];
+            this._operationProcessingTid = cast(shared) spawn(&operationProcessingThread, cast(shared) this, cast(shared) toProcess);
+            debug this.logger.info("Began processing operation " ~ to!string(toProcess.operationNumber));
+
+            this.updateOperationStatus(OperationStatus.IN_PROGRESS, "Operation Worker Thread started.");
+            return;
+        }
+
+        // Queue is not empty, we are processing things. Check for messages from thread.
+        receiveTimeout(1.msecs, (string message) {
+            string[] exploded = split(message, "~");
+
+            // Thread is done!
+            if(exploded[0] == "WORKER-SUCCESS") {
+                this.updateOperationStatus(OperationStatus.SUCCESS, exploded[1]);
+                this.currentOperation = -1;
+                this.processOperationsQueue(); // check if there is another one to do.
+                return;
+            } else if(exploded[0] == "WORKER-FAILED") {
+                // TODO: Operation Message send to server
+                this.updateOperationStatus(OperationStatus.FAILED, exploded[1]);
+                this.currentOperation = -1;
+                this.processOperationsQueue(); // check if there is another one to do.
+                return;
+            }
+        });
      }
 
      private void doDeployment() @trusted {
@@ -388,6 +440,8 @@ class Client {
                     this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, expires + 1000, false), true);
                     // Set up task to periodically ping the server and sync our status.
                     this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, 15000), true);
+                    // Set up repeating task to check for new operations.
+                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, 5000), true);
 
                     return; // Done!
                 }
@@ -454,6 +508,8 @@ class Client {
                 this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, json["expires"].integer + 1000, false), true);
                 // Set up task to periodically ping the server and sync our status.
                 this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, 15000), true);
+                // Set up repeating task to check for new operations.
+                this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, 5000), true);
             }
 
             this._sessionToken = content.strip();
@@ -510,6 +566,62 @@ class Client {
             }
 
             debug this.logger.info("Send ping request.");
+        });
+    }
+
+    private void checkOperationQueue() @trusted {
+        import std.net.curl : CurlException;
+
+        string url = this.apiURL ~ "/operation/getQueue?token=" ~ this.sessionToken;
+        issueGETRequest(url, (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("check operation queue", [200], false, true)); // Return if there is an error, task runs every 5 seconds so no need to reschedule
+
+            if(!verifyJWT(content, this.serverPublicKey)) {
+                this.logger.warning("Failed to verify JWT from server while checking operation queue.");
+                // Task runs every 5 seconds, no need to reschedule.
+                return;
+            }
+
+            JSONValue json;
+            try{
+                json = parseJSON(getJWTPayload(content));
+            } catch(Exception e) {
+                this.logger.warning("Failed to get and parse JSON from server while checking operation queue.");
+                return;
+            }
+
+            JSONValue[] array = json["array"].array;
+            foreach(operation; array) {
+                if(!(operation["operationNumber"].integer in this.operationQueue)) {
+                    Operation o = Operation(operation["operationNumber"].integer, opIDFromInt(operation["id"].integer), operation["payload"]);
+                    this.operationQueue[o.operationNumber] = o;
+                    debug this.logger.info("Added operation " ~ to!string(o.id) ~ " to the queue.");
+                }
+            }
+        });
+    }
+
+    private void updateOperationStatus(in OperationStatus opStatus, in string message, in int operationNumber = -1) @trusted {
+        import std.net.curl : CurlException;
+
+        JSONValue root = JSONValue();
+        root["operationNumber"] = operationNumber;
+        root["state"] = opStatus;
+        root["message"] = message;
+
+        string url = this.apiURL ~ "/operation/updateStatus?token=" ~ this.sessionToken ~ "&status=" ~ urlsafeB64Encode(root.toString());
+        issueGETRequest(url, (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("update operation status", [204], false, false));
+            
+            if(failure) {
+                this.logger.warning("Retrying updateOperationStatus in 1 second...");
+                this.scheduler.registerTask(Task.constructDelayedStartTask(() { 
+                    updateOperationStatus(opStatus, message, operationNumber); 
+                }, 1000));
+                return;
+            }
+
+            debug this.logger.info("Updated operation status on server.");
         });
     }
 }
