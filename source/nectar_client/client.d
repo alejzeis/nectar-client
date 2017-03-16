@@ -65,7 +65,7 @@ class Client {
         shared OperationStatus currentOperationStatus;
         shared ptrdiff_t currentOperation = -1;
         shared size_t nextOperation = 0;
-        shared Operation[size_t] _operationQueue;
+        Operation[size_t] operationQueue;
         shared Tid _operationProcessingTid;
     }
 
@@ -86,7 +86,7 @@ class Client {
 
     @property string sessionToken() @trusted nothrow { return cast(string) this._sessionToken; }
 
-    @property Operation[size_t] operationQueue() @trusted nothrow { return cast(Operation[size_t]) this._operationQueue; }
+    //@property Operation[size_t] operationQueue() @trusted nothrow { return cast(Operation[size_t]) this._operationQueue; }
     @property Tid operationProcessingTid() @trusted nothrow { return cast(Tid) this._operationProcessingTid; }
 
     public this(in bool useSystemDirs, in bool isService) @trusted {
@@ -242,13 +242,17 @@ class Client {
         one currently processing, checks for messages from it's worker thread.
      +/
      private void processOperationsQueue() @trusted {
-        if(this.operationQueue.length < 1) return;
+        if(this.operationQueue.length < 1 && this.currentOperationStatus != OperationStatus.IN_PROGRESS) return;
 
         if(this.currentOperation == -1) {
             // Queue is not empty, but we are not processing anything. Need to process nextOperation.
             Operation toProcess = this.operationQueue[this.nextOperation++];
             this._operationProcessingTid = cast(shared) spawn(&operationProcessingThread, cast(shared) this, cast(shared) toProcess);
             debug this.logger.info("Began processing operation " ~ to!string(toProcess.operationNumber));
+
+            this.currentOperation = toProcess.operationNumber;
+
+            this.operationQueue.remove(toProcess.operationNumber);
 
             this.updateOperationStatus(OperationStatus.IN_PROGRESS, "Operation Worker Thread started.");
             return;
@@ -265,7 +269,8 @@ class Client {
                 this.processOperationsQueue(); // check if there is another one to do.
                 return;
             } else if(exploded[0] == "WORKER-FAILED") {
-                // TODO: Operation Message send to server
+                this.logger.warning("Failed to process operation " ~ to!string(currentOperation) ~ ": \"" ~ exploded[1] ~ "\"");
+
                 this.updateOperationStatus(OperationStatus.FAILED, exploded[1]);
                 this.currentOperation = -1;
                 this.processOperationsQueue(); // check if there is another one to do.
@@ -592,7 +597,7 @@ class Client {
 
             JSONValue[] array = json["array"].array;
             foreach(operation; array) {
-                if(!(operation["operationNumber"].integer in this.operationQueue)) {
+                if(!(operation["operationNumber"].integer in this.operationQueue) && operation["operationNumber"].integer == this.nextOperation) {
                     Operation o = Operation(operation["operationNumber"].integer, opIDFromInt(operation["id"].integer), operation["payload"]);
                     this.operationQueue[o.operationNumber] = o;
                     debug this.logger.info("Added operation " ~ to!string(o.id) ~ " to the queue.");
@@ -603,6 +608,8 @@ class Client {
 
     private void updateOperationStatus(in OperationStatus opStatus, in string message, in int operationNumber = -1) @trusted {
         import std.net.curl : CurlException;
+
+        this.currentOperationStatus = opStatus;
 
         JSONValue root = JSONValue();
         root["operationNumber"] = operationNumber;

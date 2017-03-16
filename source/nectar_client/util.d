@@ -158,7 +158,7 @@ string convertTZLinuxToWindows(in string linuxTZ) @trusted {
 		}
 	}
 
-	return "Unknown";
+	return linuxTZ;
 }
 
 string convertTZWindowsToLinux(in string windowsTZ) @trusted {
@@ -183,7 +183,7 @@ string convertTZWindowsToLinux(in string windowsTZ) @trusted {
 		}
 	}
 
-	return "Unknown";
+	return windowsTZ;
 }
 
 // THE FOLLOWING CODE IS FROM THE JWTD PROJECT, UNDER THE MIT LICENSE

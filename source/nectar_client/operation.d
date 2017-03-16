@@ -1,6 +1,8 @@
 module nectar_client.operation;
 
+import std.conv;
 import std.json;
+import std.process;
 import std.concurrency;
 
 import nectar_client.client;
@@ -61,5 +63,31 @@ void operationProcessingThread(shared Client client, shared Operation operation)
 }
 
 private void setTimezoneImpl(Client client, JSONValue payload) {
-    // TODO: set timezone
+    import nectar_client.util : convertTZLinuxToWindows, convertTZWindowsToLinux;
+
+    version(linux) {
+        // Use timedatectl on linux, std.process.execute
+        auto result = execute(["timedatectl", "set-timezone", convertTZWindowsToLinux(payload["timezone"].str)]);
+
+        if(result.status != 0) {
+            ownerTid.send("WORKER-FAILED~timedatectl returned non-zero exit status: " ~ to!string(result.status));
+            return;
+        }
+
+        ownerTid.send("WORKER-SUCCESS~timedatectl returned zero exit code (OK)");
+        return;
+    } else version(Windows) {
+        // Use tzutil on Windows, std.process.execute
+        auto result = execute(["tzutil", "/s", convertTZLinuxToWindows(payload["timzone"].str)]);
+
+        if(result.status != 0) {
+            ownerTid.send("WORKER-FAILED~tzutil returned non-zero exit status: " ~ to!string(result.status));
+            return;
+        }
+
+        ownerTid.send("WORKER-SUCCESS~tzutil returned zero exit code (OK)");
+        return;
+    } else {
+        assert(0, "Need to implement setTimezoneImpl for this platform!");
+    }
 }
