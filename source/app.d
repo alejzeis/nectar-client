@@ -58,20 +58,30 @@ private void runWindowsServiceWatcher() @system {
 			
 			//pid = spawnProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], stdin, stdout);
 			pipes = pipeProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], Redirect.stdin);
+
+			writeln("STARTED");
 			
-			auto tid = spawn(&consoleListenThread);
-			
+			auto serviceTid = spawn(&consoleListenThread); // Spawn listening thread to listen for input from windows service
+			auto clientTid = spawn(&fileListenThread, pipes.stdout, "!"); // Spawn listening thread to listen for output from nectar-client.
+
 			while(true) {
 				auto status = tryWait(pipes.pid);
 				if(status.terminated && !signaledTerminate) {
 					//pid = spawnProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], stdin, stdout);
 					pipes = pipeProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], Redirect.stdin);
-					writeln("Restarted.");
+					writeln("RESTARTED");
 					// Restart process
 				}
 				
-				receiveTimeout(200.msecs, (string message) {
+				receiveTimeout(100.msecs, (string message) {
 					message = message.strip();
+					if(message.startsWith("!")) { // Check if message is from nectar-client
+						writeln(message);
+						return;
+					}
+
+					// message is from windows service
+
                     if(message == "POWER-SUSPEND" || message == "SERVICESTOP") {
 						signaledTerminate = true;
 					}
@@ -82,7 +92,7 @@ private void runWindowsServiceWatcher() @system {
 						Thread.sleep(3000.msecs);
 						if(!tryWait(pipes.pid).terminated) {
 							kill(pipes.pid);
-							writeln("Killed.");
+							writeln("KILLED");
 							exit(2);
 						} else {
 							exit(0);

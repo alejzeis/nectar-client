@@ -36,6 +36,7 @@ class Client {
 
     package {
         shared bool running = false;
+        shared bool isRestart = false;
     }
 
     private {
@@ -62,6 +63,7 @@ class Client {
 
         shared string _sessionToken;
 
+        shared Operation currentOp;
         shared OperationStatus currentOperationStatus;
         shared ptrdiff_t currentOperation = -1;
         shared size_t nextOperation = 0;
@@ -193,6 +195,11 @@ class Client {
         this.running = false;
     }
 
+    public void restart(in string message = "") @safe {
+        this.isRestart = true;
+        this.running = false;
+    }
+
     public void run() @trusted {
         if(this.running) return;
 
@@ -222,9 +229,12 @@ class Client {
      }
 
      private void shutdown() @trusted {
-        this.switchState(ClientState.SHUTDOWN, false, true);
-
-        // TODO: Determine if restarting or shutdown.
+        // TODO: Determine if SYSTEM restarting or shutdown.
+        if(this.isRestart) {
+            this.switchState(ClientState.RESTART, false, true);
+        } else {
+            this.switchState(ClientState.SHUTDOWN, false, true);
+        }
 
         //std.file.remove
         remove(getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt"); // TODO: Delete saved token only if not restarting.
@@ -247,6 +257,7 @@ class Client {
         if(this.currentOperation == -1) {
             // Queue is not empty, but we are not processing anything. Need to process nextOperation.
             Operation toProcess = this.operationQueue[this.nextOperation++];
+            this.currentOp = toProcess;
             this._operationProcessingTid = cast(shared) spawn(&operationProcessingThread, cast(shared) this, cast(shared) toProcess);
             debug this.logger.info("Began processing operation " ~ to!string(toProcess.operationNumber));
 
@@ -265,6 +276,17 @@ class Client {
             // Thread is done!
             if(exploded[0] == "WORKER-SUCCESS") {
                 this.updateOperationStatus(OperationStatus.SUCCESS, exploded[1]);
+
+                if(this.currentOp.id == OperationID.OPERATION_UPDATE_CLIENT_EXECUTABLE) {
+                    if(this.isService) {
+                        import std.stdio : writeln;
+                        writeln("UPDATEEXEC"); // Signal service to replace our executable once we exit 
+                    }
+
+                    this.restart("Updating client executable.");
+                    return;
+                }
+
                 this.currentOperation = -1;
                 this.processOperationsQueue(); // check if there is another one to do.
                 return;
@@ -389,6 +411,8 @@ class Client {
             if(json["apiVersionMinor"].integer != to!int(API_MINOR)) {
                 this.logger.warning("Server API_MINOR version (" ~ to!string(json["apiVersionMinor"].integer) 
                     ~ ") is differs with ours (" ~ API_MAJOR ~ ")");
+
+                this._apiURL = this.apiURLRoot ~ "/v/" ~ API_MAJOR ~ "/" ~ to!string(json["apiVersionMinor"].integer);
             }
 
             this._serverID = json["serverID"].str;

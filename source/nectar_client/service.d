@@ -19,3 +19,12 @@ void consoleListenThread() {
         ownerTid.send(line);
     }
 }
+
+void fileListenThread(File f, string prefix) {
+    Thread.getThis().isDaemon = true; // If the main thread exits, then we do too.
+
+    string line;
+    while((line = f.readln()) !is null) {
+        ownerTid.send(prefix ~ line);
+    }
+}
