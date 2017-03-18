@@ -77,7 +77,7 @@ void operationProcessingThread(shared Client client, shared Operation operation)
 }
 
 private void updateClientExecutableImpl(Client client, JSONValue payload) {
-    import nectar_client.util : getTempDirectoryPath, PATH_SEPARATOR;
+    import nectar_client.util : getNewExecutablePath, PATH_SEPARATOR;
 
     import std.base64 : Base64;
     import std.zlib : uncompress;
@@ -86,7 +86,7 @@ private void updateClientExecutableImpl(Client client, JSONValue payload) {
     ubyte[] src = Base64.decode(payload["content"].str);
     ubyte[] uncompressed = cast(ubyte[]) uncompress(src); // Lots of memory used here
 
-    string file = getTempDirectoryPath() ~ PATH_SEPARATOR ~ "nectar-client-exec-new.bin";
+    string file = getNewExecutablePath(client.useSystemDirs) ~ PATH_SEPARATOR ~ "nectar-client-exec-new.bin";
     if(exists(file))
         remove(file);
 

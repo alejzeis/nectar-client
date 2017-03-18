@@ -106,6 +106,18 @@ JSONValue getUpdatesInfo() {
 	return root;
 }
 
+string getNewExecutablePath(in bool useSystemDirs = false) @system {
+	if(!useSystemDirs) {
+		return "."; // Current directory
+	}
+	
+	version(Posix) {
+		return "/var/cache";
+	} else {
+		return "C:\\NectarClient";
+	}
+}
+
 std.stdio.File createNewTmpSTDIOFile(in string name, in string mode = "w") @system {
 	import std.stdio : File;
 

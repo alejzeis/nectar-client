@@ -46,6 +46,8 @@ private void runWindowsServiceWatcher() @system {
 	import std.process;
 	import std.string;
 	
+	import std.file : remove, rename;
+	
 	version(Windows) {
 		bool signaledTerminate = false;
 		//Pid pid;
@@ -57,17 +59,21 @@ private void runWindowsServiceWatcher() @system {
 			//File stdin = createNewTmpSTDIOFile("nectar-client-winservice-stdin.txt", "r");
 			
 			//pid = spawnProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], stdin, stdout);
-			pipes = pipeProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], Redirect.stdin);
+			pipes = pipeProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], Redirect.stdin | Redirect.stdout);
 
 			writeln("STARTED");
 			
 			auto serviceTid = spawn(&consoleListenThread); // Spawn listening thread to listen for input from windows service
-			auto clientTid = spawn(&fileListenThread, pipes.stdout, "!"); // Spawn listening thread to listen for output from nectar-client.
 
 			while(true) {
 				auto status = tryWait(pipes.pid);
 				if(status.terminated && !signaledTerminate) {
-					//pid = spawnProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], stdin, stdout);
+					if(checkUpdateExecutable()) { // Check if a new executable has been found
+						writeln("UPDATEEXEC"); // Write out anyway, but C# can't read our output (no idea why)
+						
+						remove("C:\\NectarClient\\nectar-client.exe");
+						rename(getNewExecutablePath(ifUseSystemDirs()) ~ PATH_SEPARATOR ~ "nectar-client-exec-new.bin", "C:\\NectarClient\\nectar-client.exe");
+					}
 					pipes = pipeProcess(["C:\\NectarClient\\nectar-client.exe", "--service"], Redirect.stdin);
 					writeln("RESTARTED");
 					// Restart process
@@ -104,5 +110,19 @@ private void runWindowsServiceWatcher() @system {
 	} else {
 		writeln("Can't run as windows service watcher on a non-windows operating system!");
 		exit(1);
+	}
+}
+
+version(Windows) {
+	import std.file : exists;
+	
+	import nectar_client.util : getNewExecutablePath, PATH_SEPARATOR;
+	
+	private bool checkUpdateExecutable() @system {
+		if(exists(getNewExecutablePath(ifUseSystemDirs()) ~ PATH_SEPARATOR ~ "nectar-client-exec-new.bin")) {
+			return true;
+		} else {
+			return false;
+		}
 	}
 }

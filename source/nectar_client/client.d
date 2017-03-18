@@ -621,8 +621,8 @@ class Client {
 
             JSONValue[] array = json["array"].array;
             foreach(operation; array) {
-                if(!(operation["operationNumber"].integer in this.operationQueue) && operation["operationNumber"].integer == this.nextOperation) {
-                    Operation o = Operation(operation["operationNumber"].integer, opIDFromInt(operation["id"].integer), operation["payload"]);
+                if(!(cast(uint) (operation["operationNumber"].integer) in this.operationQueue) && operation["operationNumber"].integer == this.nextOperation) {
+                    Operation o = Operation(cast(uint) operation["operationNumber"].integer, opIDFromInt(cast(uint) operation["id"].integer), operation["payload"]);
                     this.operationQueue[o.operationNumber] = o;
                     debug this.logger.info("Added operation " ~ to!string(o.id) ~ " to the queue.");
                 }
