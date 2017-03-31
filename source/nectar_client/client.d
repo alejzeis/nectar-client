@@ -37,6 +37,7 @@ class Client {
     package {
         shared bool running = false;
         shared bool isRestart = false;
+        shared bool isSuspend = false;
     }
 
     private {
@@ -232,17 +233,23 @@ class Client {
         // TODO: Determine if SYSTEM restarting or shutdown.
         if(this.isRestart) {
             this.switchState(ClientState.RESTART, false, true);
+        } else if(this.isSuspend) {
+            this.switchState(ClientState.SLEEP, false, true);
         } else {
             this.switchState(ClientState.SHUTDOWN, false, true);
         }
 
         //std.file.remove
-        remove(getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt"); // TODO: Delete saved token only if not restarting.
+        if(!this.isRestart) remove(getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt");
      }
 
      private void processMessageFromServiceProcess(in string message) @safe {
         // TODO: Process more service messages.
         if(message == "SERVICESTOP") {
+            this.logger.info("Got SERVICESTOP signal from service.");
+            this.stop();
+        } else if(message == "POWER-SUSPEND") {
+            this.logger.info("Got POWER-SUSPEND signal from service.");
             this.stop();
         }
      }
