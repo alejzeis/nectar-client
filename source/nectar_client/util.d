@@ -55,14 +55,11 @@ long getTimeMillis() @system nothrow {
 		return (t.tv_sec) * 1000 + (t.tv_usec) / 1000;
 	} else version(Windows) {
 		pragma(msg, "INFO: Using core.sys.windows.winbase.GetSystemTime() for getTimeMillis()");
-		import core.sys.windows.winbase : SYSTEMTIME, FILETIME, GetSystemTime, SystemTimeToFileTime;
+		import core.sys.windows.winbase : FILETIME, GetSystemTimeAsFileTime;
 		import core.sys.windows.winnt : LARGE_INTEGER;
 		
-		SYSTEMTIME time;
-		GetSystemTime(&time);
-		
 		FILETIME ftime;
-		SystemTimeToFileTime(&time, &ftime);
+		GetSystemTimeAsFileTime(&ftime);
 		
 		LARGE_INTEGER date, adjust;
 		
@@ -73,7 +70,7 @@ long getTimeMillis() @system nothrow {
 		
 		date.QuadPart -= adjust.QuadPart;
 		
-		return date.QuadPart / 1000000;
+		return date.QuadPart / 10000;
 	} else {
 		//pragma(msg, "Need to implement getTimeMillis() for this platform!");
 		assert(0, "Need to implement getTimeMillis() for this platform!");
