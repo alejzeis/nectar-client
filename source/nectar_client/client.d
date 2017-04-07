@@ -243,13 +243,17 @@ class Client {
         if(!this.isRestart) remove(getConfigDirLocation() ~ PATH_SEPARATOR ~ "savedToken.txt");
      }
 
-     private void processMessageFromServiceProcess(in string message) @safe {
+     private void processMessageFromServiceProcess(string message) @safe {
         // TODO: Process more service messages.
+	
+	message = strip(message); // Remove newlines
+	
         if(message == "SERVICESTOP") {
             this.logger.info("Got SERVICESTOP signal from service.");
             this.stop();
         } else if(message == "POWER-SUSPEND") {
             this.logger.info("Got POWER-SUSPEND signal from service.");
+	    this.isSuspend = true;
             this.stop();
         }
      }
