@@ -19,6 +19,7 @@ enum OperationID {
     OPERATION_INSTALL_PACAKGE = 1,
     OPERATION_UPDATE_CLIENT_EXECUTABLE = 2,
     OPERATION_SET_TIMEZONE = 20,
+    OPERATION_SET_HOSTNAME = 21,
     OPERATION_DEPLOY_SCRIPT = 30,
     OPERATION_DO_SHUTDOWN = 40,
     OPERATION_DO_REBOOT = 41,
@@ -41,6 +42,8 @@ OperationID opIDFromInt(in size_t id) {
             return OperationID.OPERATION_UPDATE_CLIENT_EXECUTABLE;
         case OperationID.OPERATION_SET_TIMEZONE:
             return OperationID.OPERATION_SET_TIMEZONE;
+        case OperationID.OPERATION_SET_HOSTNAME:
+            return OperationID.OPERATION_SET_HOSTNAME;
         case OperationID.OPERATION_DEPLOY_SCRIPT:
             return OperationID.OPERATION_DEPLOY_SCRIPT;
         case OperationID.OPERATION_DO_SHUTDOWN:
@@ -59,6 +62,9 @@ void operationProcessingThread(shared Client client, shared Operation operation)
         switch(operation.id) {
             case OperationID.OPERATION_SET_TIMEZONE:
                 setTimezoneImpl(cast(Client) client, operation.payload);
+                break;
+            case OperationID.OPERATION_SET_HOSTNAME:
+                setHostnameImpl(cast(Client) client, operation.payload);
                 break;
             case OperationID.OPERATION_UPDATE_CLIENT_EXECUTABLE:
                 updateClientExecutableImpl(cast(Client) client, operation.payload);
@@ -122,5 +128,32 @@ private void setTimezoneImpl(Client client, JSONValue payload) {
         return;
     } else {
         assert(0, "Need to implement setTimezoneImpl for this platform!");
+    }
+}
+
+private void setHostnameImpl(Client client, JSONValue payload) {
+    version(linux) {
+        // Use hostnamectl on linux, std.process.execute
+        auto result = execute(["hostnamectl", "set-hostname", payload["hostname"].str]);
+
+        if(result.status != 0) {
+            ownerTid.send("WORKER-FAILED~hostnamectl returned non-zero exit status: " ~ to!string(result.status));
+            return;
+        }
+
+        ownerTid.send("WORKER-SUCCESS~hostnamectl returned zero exit code (OK)");
+        return;
+    } else version(Windows) {
+        // Use wmic command on Windows
+        auto result = execute(["wmic", "computersystem", "where", "name=\"%COMPUTERNAME%\"", "call", "rename", "name=\"" ~ payload["hostname"].str ~ "\""]);
+
+        if(result.status != 0) {
+            ownerTid.send("WORKER-FAILED~wmic returned non-zero exit status: " ~ to!string(result.status));
+            return;
+        }
+
+        ownerTid.send("WORKER-SUCCESS~wmic returned zero exit code (OK)");
+    } else {
+        assert(0, "Need to implement setHostnameImpl for this platform!");
     }
 }
