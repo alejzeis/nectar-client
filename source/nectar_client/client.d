@@ -22,7 +22,7 @@ import nectar_client.operation;
 immutable string SOFTWARE = "Nectar-Client";
 immutable string SOFTWARE_VERSION = "1.0.0-alpha1";
 immutable string RUNTIME = "DRUNTIME, compiled by " ~ __VENDOR__ ~ ", version " ~ to!string(__VERSION__);
-immutable string API_MAJOR = "3";
+immutable string API_MAJOR = "4";
 immutable string API_MINOR = "1";
 
 class Client {
@@ -186,8 +186,8 @@ class Client {
             return;
         }
 
-        this._uuid = readText(uuidLocation);
-        this._authStr = readText(authLocation);
+        this._uuid = readText(uuidLocation).strip();
+        this._authStr = readText(authLocation).strip();
 
         this.logger.info("Our UUID is " ~ this.uuid);
     }
@@ -595,7 +595,10 @@ class Client {
     private void sendPing() @trusted {
         import std.net.curl : CurlException;
 
-        string url = this.apiURL ~ "/session/clientPing?token=" ~ this.sessionToken ~ "&data=" ~ urlsafeB64Encode(getUpdatesInfo().toString());
+        auto updatesInfo = getUpdatesInfo();
+        updatesInfo["peerInfo"] = getPeerInfo();
+
+        string url = this.apiURL ~ "/session/clientPing?token=" ~ this.sessionToken ~ "&data=" ~ urlsafeB64Encode(updatesInfo.toString());
         issueGETRequest(url, (ushort status, string content, CurlException ce) {
             mixin(RequestErrorHandleMixin!("send client ping", [204], false, false));
 

@@ -11,8 +11,7 @@ immutable string DEFAULT_CONFIG = "
     \"network\" : {
         \"ip\": \"127.0.0.1\",
         \"port\": 8080,
-        \"useHTTPS\": false,
-        \"sendSystemData\": true
+        \"useHTTPS\": false
     },
     \"security\" : {
         \"serverPublicKey\": \"keys/server-pub.pem\",
@@ -104,7 +103,6 @@ class Configuration {
             v["network"]["ip"].str,
             to!ushort(v["network"]["port"].integer),
             jsonValueToBool(v["network"]["useHTTPS"]),
-            jsonValueToBool(v["network"]["sendSystemData"])
         );
 
         SecurityConfiguration sc = SecurityConfiguration(
@@ -124,7 +122,6 @@ struct NetworkConfiguration {
     immutable ushort serverPort;
 
     immutable bool useSecure;
-    immutable bool sendSystemData;
 }
 
 struct SecurityConfiguration {

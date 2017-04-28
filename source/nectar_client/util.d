@@ -77,6 +77,40 @@ long getTimeMillis() @system nothrow {
 	}
 }
 
+JSONValue getPeerInfo() {
+	import nectar_client.client : SOFTWARE, SOFTWARE_VERSION, RUNTIME, API_MAJOR, API_MINOR;
+	import std.system : os;
+	import core.cpuid;
+
+	JSONValue root = JSONValue();
+	root["software"] = SOFTWARE;
+	root["softwareVersion"] = SOFTWARE_VERSION;
+	root["apiVersionMajor"] = to!int(API_MAJOR);
+	root["apiVersionMinor"] = to!int(API_MINOR);
+	root["serverID"] = "unknown";
+	
+	JSONValue sysInfo = JSONValue();
+
+	sysInfo["runtime"] = RUNTIME;
+	version(X86) {
+		sysInfo["arch"] = "x86";
+	} else version(X86_64) {
+		sysInfo["arch"] = "x86_64";
+	} else version(ARM) {
+		sysInfo["arch"] = "ARM";
+	} else {
+		sysInfo["arch"] = "unknown";
+	}
+	sysInfo["os"] = to!string(os);
+	sysInfo["osVersion"] = "unknown";
+	sysInfo["cpu"] = processor();
+	sysInfo["cpus"] = coresPerCPU();
+
+	root["systemInfo"] = sysInfo;
+
+	return root;
+}
+
 JSONValue getUpdatesInfo() {
 	import std.stdio : File;
 	import std.file : readText;
