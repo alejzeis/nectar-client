@@ -80,6 +80,7 @@ long getTimeMillis() @system nothrow {
 JSONValue getPeerInfo() {
 	import nectar_client.client : SOFTWARE, SOFTWARE_VERSION, RUNTIME, API_MAJOR, API_MINOR;
 	import std.system : os;
+	import std.socket : Socket;
 	import core.cpuid;
 
 	JSONValue root = JSONValue();
@@ -88,6 +89,7 @@ JSONValue getPeerInfo() {
 	root["apiVersionMajor"] = to!int(API_MAJOR);
 	root["apiVersionMinor"] = to!int(API_MINOR);
 	root["serverID"] = "unknown";
+	root["hostname"] = Socket.hostName();
 	
 	JSONValue sysInfo = JSONValue();
 
