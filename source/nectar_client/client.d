@@ -602,13 +602,18 @@ class Client {
         issueGETRequest(url, (ushort status, string content, CurlException ce) {
             mixin(RequestErrorHandleMixin!("send client ping", [204], false, false));
 
-            if(failure) {
+            
+            if(failure && status == 403) {
+                this.logger.warning("Server returned 403 for clientPing, perhaps token is bad?");
+                this.requestToken(false);
+                return;
+            } else if(failure) {
                 this.logger.warning("Retrying send ping in 2 seconds...");
                 this.scheduler.registerTask(Task.constructDelayedStartTask(&this.sendPing, 2000));
                 return;
             }
 
-            debug this.logger.info("Send ping request.");
+            debug this.logger.info("Sent ping request.");
         });
     }
 
