@@ -117,7 +117,7 @@ private void setTimezoneImpl(Client client, JSONValue payload) {
         return;
     } else version(Windows) {
         // Use tzutil on Windows, std.process.execute
-        auto result = execute(["tzutil", "/s", convertTZLinuxToWindows(payload["timzone"].str)]);
+        auto result = execute(["tzutil", "/s", convertTZLinuxToWindows(payload["timezone"].str)]);
 
         if(result.status != 0) {
             ownerTid.send("WORKER-FAILED~tzutil returned non-zero exit status: " ~ to!string(result.status));
