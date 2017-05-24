@@ -20,10 +20,10 @@ import nectar_client.service;
 import nectar_client.operation;
 
 immutable string SOFTWARE = "Nectar-Client";
-immutable string SOFTWARE_VERSION = "1.4.5-alpha1";
+immutable string SOFTWARE_VERSION = "1.4.6-alpha1";
 immutable string RUNTIME = "DRUNTIME, compiled by " ~ __VENDOR__ ~ ", version " ~ to!string(__VERSION__);
 immutable string API_MAJOR = "4";
-immutable string API_MINOR = "5";
+immutable string API_MINOR = "6";
 
 class Client {
     /++
@@ -503,6 +503,11 @@ class Client {
             mixin(RequestErrorHandleMixin!("token request", [200], false, false));
 
             if(failure) {
+                if(status == 404) { // Check if our UUID was not found
+                    // Our UUID was not found, we were de-registered. In this case, we exit
+                    this.logger.fatal("Server returned 404 NOT_FOUND for token request, we have been deregistered!");
+                }
+
                 this.logger.warning("Retrying token request...");
 
                 // Repeating renew task will handle it, unless inital
