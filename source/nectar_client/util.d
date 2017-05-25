@@ -126,16 +126,14 @@ JSONValue getUpdatesInfo() {
 
 		try {
 			//auto pid = spawnProcess(["/usr/lib/update-notifier/apt-check"], std.stdio.stdin, tmpOut, tmpOut);
-			auto pipes = pipeShell("/usr/lib/update-notifier/apt-check", Redirect.stdout);
+			auto pipes = pipeProcess("/usr/lib/update-notifier/apt-check", Redirect.stdout | Redirect.stderr);
 
 			if(wait(pipes.pid) != 0) {
 				// Process exited with non-zero exit code, set to unknown.
 				root["securityUpdates"] = -1;
 				root["updates"] = -1;
 			} else {
-				string str1 = pipes.stdout.readln();
-
-				string[] exploded = str1.split(";");
+				string[] exploded = pipes.stderr.readln().split(";");
 				root["securityUpdates"] = to!int(exploded[1]);
 				root["updates"] = to!int(exploded[0]);
 			}
