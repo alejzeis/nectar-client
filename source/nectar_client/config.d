@@ -6,8 +6,7 @@ import std.conv;
 
 import nectar_client.util;
 
-immutable string DEFAULT_CONFIG = "
-{
+immutable string DEFAULT_CONFIG = "{
     \"network\" : {
         \"ip\": \"127.0.0.1\",
         \"port\": 8080,
@@ -45,7 +44,7 @@ string getLogLocation(in bool useSystemDirs = false) @trusted {
         version(Windows) {
             return "C:\\NectarClient\\client.log";
         } else version(Posix) {
-            return "/var/log/nectarclient.log";
+            return "/var/log/nectar-client.log";
         }
     } else {
         return getcwd() ~ PATH_SEPARATOR ~ "client.log";

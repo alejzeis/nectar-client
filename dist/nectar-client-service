@@ -1,0 +1,4 @@
+#!/bin/sh
+
+cd /tmp
+NECTAR_USE_SYSTEM=true nectar-client --service
