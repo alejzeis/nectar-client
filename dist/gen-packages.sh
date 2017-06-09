@@ -18,6 +18,6 @@ else
 fi
 
 # Build Deb
-fpm -s dir -t deb -a $BUILD_ARCH -n nectar-client -v $NECTAR_CLIENT_VERSION --iteration $BUILD_NUMBER --after-install nectar-client-install.sh nectar-client-service=/usr/bin/nectar-client-service ../bin/nectar-client=/usr/bin/nectar-client nectar-client.service=/usr/lib/systemd/system/nectar-client.service
+fpm -s dir -t deb -a $BUILD_ARCH -d xdelta3 -n nectar-client -v $NECTAR_CLIENT_VERSION --iteration $BUILD_NUMBER --after-install nectar-client-install.sh nectar-client-service=/usr/bin/nectar-client-service ../bin/nectar-client=/usr/bin/nectar-client nectar-client.service=/usr/lib/systemd/system/nectar-client.service
 # Build RPM
-fpm -s dir -t rpm -a $BUILD_ARCH -n nectar-client -v $NECTAR_CLIENT_VERSION --iteration $BUILD_NUMBER --after-install nectar-client-install.sh nectar-client-service=/usr/bin/nectar-client-service ../bin/nectar-client=/usr/bin/nectar-client nectar-client.service=/usr/lib/systemd/system/nectar-client.service
+fpm -s dir -t rpm -a $BUILD_ARCH -d xdelta -n nectar-client -v $NECTAR_CLIENT_VERSION --iteration $BUILD_NUMBER --after-install nectar-client-install.sh nectar-client-service=/usr/bin/nectar-client-service ../bin/nectar-client=/usr/bin/nectar-client nectar-client.service=/usr/lib/systemd/system/nectar-client.service
