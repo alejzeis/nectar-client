@@ -11,6 +11,7 @@ import std.experimental.logger;
 import core.thread;
 import core.stdc.stdlib : exit;
 
+import nectar_client.fts;
 import nectar_client.logging;
 import nectar_client.jwt;
 import nectar_client.util;
@@ -20,12 +21,16 @@ import nectar_client.service;
 import nectar_client.operation;
 
 immutable string SOFTWARE = "Nectar-Client";
-immutable string SOFTWARE_VERSION = "1.6.1-alpha2";
+immutable string SOFTWARE_VERSION = "1.6.1-alpha3";
 immutable string RUNTIME = "DRUNTIME, compiled by " ~ __VENDOR__ ~ ", version " ~ to!string(__VERSION__);
 immutable string API_MAJOR = "6";
 immutable string API_MINOR = "1";
 
 class Client {
+    static immutable size_t PING_SERVER_INTERVAL = 15000;
+    static immutable size_t CHECK_OPERATIONS_INTERVAL = 5000;
+    static immutable size_t VERIFY_CHECKSUMS_PERIODIC_INTERVAL = 15000;
+
     /++
         True if the client is accessing configuration files and keys
         from system directories, false if from current directory.
@@ -50,6 +55,7 @@ class Client {
 
         shared Logger _logger;
         shared Scheduler _scheduler;
+        shared FTSManager _ftsManager;
 
         shared Configuration _config;
 
@@ -74,6 +80,7 @@ class Client {
 
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
     @property Scheduler scheduler() @trusted nothrow { return cast(Scheduler) this._scheduler; }
+    @property FTSManager ftsManager() @trusted nothrow { return cast(FTSManager) this._ftsManager; }
 
     @property Configuration config() @trusted nothrow { return cast(Configuration) this._config; }
 
@@ -98,6 +105,7 @@ class Client {
 
         this._logger = cast(shared) new NectarLogger(LogLevel.trace, getLogLocation(useSystemDirs), isService ? false : true);
         this._scheduler = cast(shared) new Scheduler(this);
+        this._ftsManager = cast(shared) new FTSManager(this, useSystemDirs);
 
         this.logger.info("SERVICE MODE: " ~ to!string(isService));
 
@@ -246,7 +254,7 @@ class Client {
      private void processMessageFromServiceProcess(string message) @safe {
         // TODO: Process more service messages.
 	
-	message = strip(message); // Remove newlines
+	    message = strip(message); // Remove newlines
 	
         if(message == "SERVICESTOP") {
             this.logger.info("Got SERVICESTOP signal from service.");
@@ -476,12 +484,16 @@ class Client {
 
                     this.switchState(ClientState.ONLINE, true);
 
+                    this.ftsManager.initalVerifyChecksums(); // Verify FTS cache's checksums against those provided by the server
+
                     // Set up repeating task to "renew" token.
                     this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, expires + 1000, false), true);
                     // Set up task to periodically ping the server and sync our status.
-                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, 15000), true);
+                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, PING_SERVER_INTERVAL), true);
                     // Set up repeating task to check for new operations.
-                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, 5000), true);
+                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, CHECK_OPERATIONS_INTERVAL), true);
+                    /// Set up repeating task to check for server-side changes to FTS files so we can sync.
+                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.ftsManager.verifyChecksumsPeriodic, VERIFY_CHECKSUMS_PERIODIC_INTERVAL));
 
                     return; // Done!
                 }
@@ -549,12 +561,16 @@ class Client {
             }
 
             if(inital) {
+                this.ftsManager.initalVerifyChecksums(); // Verify FTS cache's checksums against those provided by the server
+
                 // Set up repeating task to "renew" token.
                 this.scheduler.registerTask(Task.constructRepeatingTask(() { requestToken(); }, json["expires"].integer + 1000, false), true);
                 // Set up task to periodically ping the server and sync our status.
-                this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, 15000), true);
+                this.scheduler.registerTask(Task.constructRepeatingTask(&this.sendPing, PING_SERVER_INTERVAL), true);
                 // Set up repeating task to check for new operations.
-                this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, 5000), true);
+                this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, CHECK_OPERATIONS_INTERVAL), true);
+                /// Set up repeating task to check for server-side changes to FTS files so we can sync.
+                this.scheduler.registerTask(Task.constructRepeatingTask(&this.ftsManager.verifyChecksumsPeriodic, VERIFY_CHECKSUMS_PERIODIC_INTERVAL));
             }
 
             this._sessionToken = content.strip();

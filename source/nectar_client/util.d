@@ -244,6 +244,21 @@ string convertTZWindowsToLinux(in string windowsTZ) @trusted {
 	return windowsTZ;
 }
 
+string generateFileSHA256Checksum(in string file) {
+	import std.digest.sha;
+	import std.stdio : File;
+
+	auto sha256 = new SHA256Digest();
+	auto fileHandle = File(file, "r");
+
+	foreach(ubyte[] buf; fileHandle.byChunk(8192)) {
+		sha256.put(buf);
+	}
+
+	auto hash = sha256.finish();
+	return cast(string) hash;
+}
+
 // THE FOLLOWING CODE IS FROM THE JWTD PROJECT, UNDER THE MIT LICENSE
 // You can find the original project and code here: https://github.com/olehlong/jwtd
 
