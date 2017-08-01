@@ -76,6 +76,8 @@ class Client {
         shared size_t nextOperation = 0;
         Operation[size_t] operationQueue;
         shared Tid _operationProcessingTid;
+
+        shared bool _loggedIn = false;
     }
 
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
@@ -98,6 +100,8 @@ class Client {
 
     //@property Operation[size_t] operationQueue() @trusted nothrow { return cast(Operation[size_t]) this._operationQueue; }
     @property Tid operationProcessingTid() @trusted nothrow { return cast(Tid) this._operationProcessingTid; }
+
+    @property bool loggedIn() @safe nothrow { return _loggedIn; }
 
     public this(in bool useSystemDirs, in bool isService) @trusted {
         this.useSystemDirs = useSystemDirs;
@@ -560,6 +564,8 @@ class Client {
                 return;
             }
 
+            this._sessionToken = content.strip();
+
             if(inital) {
                 this.ftsManager.initalVerifyChecksums(); // Verify FTS cache's checksums against those provided by the server
 
@@ -572,8 +578,6 @@ class Client {
                 /// Set up repeating task to check for server-side changes to FTS files so we can sync.
                 this.scheduler.registerTask(Task.constructRepeatingTask(&this.ftsManager.verifyChecksumsPeriodic, VERIFY_CHECKSUMS_PERIODIC_INTERVAL));
             }
-
-            this._sessionToken = content.strip();
 
             //std.file.write
             write(savedTokenLocation, content); // Save token to disk

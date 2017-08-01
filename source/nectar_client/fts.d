@@ -3,6 +3,8 @@ module nectar_client.fts;
 import std.digest.sha;
 import std.json;
 import std.file;
+import std.algorithm;
+import std.net.curl;
 
 import nectar_client.client;
 import nectar_client.util;
@@ -29,6 +31,7 @@ class FTSManager {
         string publicCacheDir;
         string userCacheDir;
 
+        JSONValue _publicChecksumIndex;
         JSONValue _checksumIndex;
     }
 
@@ -63,6 +66,12 @@ class FTSManager {
         buildChecksumsDir(this.rootCacheDir, this._checksumIndex);
 
         this.client.logger.info(" ------Done!");
+
+        this.client.logger.info("Downloading inital checksum index from the server...");
+
+        downloadChecksumIndexFromServer();
+
+        this.client.logger.info("Done!");
     }
 
     private void buildChecksumsDir(in string directory, ref JSONValue rootJSON) @system {
@@ -75,9 +84,52 @@ class FTSManager {
         }
     }
 
-    /// Compares the local checksum index to the server's checksum index. If differences are found
-    /// the new files/deltas are downloaded and replaced/applied.
-    void verifyChecksumsPeriodic() @trusted {
+    private void downloadChecksumIndexFromServer() {
+        // Download public index first
+        debug this.client.logger.info("Downloading public index...");
 
+        string url = this.client.apiURL ~ "/fts/checksumIndex?token=" ~ this.client.sessionToken;
+
+        auto logger = this.client.logger; // Need this due to mixin
+
+        issueGETRequest(url ~ "&public=true", (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("token request", [200], true, false));
+
+            JSONValue json;
+            try {
+                json = parseJSON(content);
+            } catch(JSONException e) {
+                logger.fatal("Checksum index returned invalid JSON, aborting!");
+                // fatal throws object.Error
+                return;
+            }
+
+            this._publicChecksumIndex = json;
+        });
+
+        if(this.client.loggedIn) {
+            debug this.client.logger.info("Downloading user index...");
+
+            issueGETRequest(url ~ "&public=false", (ushort status, string content, CurlException ce) {
+                mixin(RequestErrorHandleMixin!("token request", [200], true, false));
+
+                JSONValue json;
+                try {
+                    json = parseJSON(content);
+                } catch(JSONException e) {
+                    logger.fatal("Checksum index returned invalid JSON, aborting!");
+                    // fatal throws object.Error
+                    return;
+                }
+
+                this._checksumIndex = json;
+            });
+        }
+    }
+
+    /// Downloads the server's checksum index again in case of new changes.
+    /// Then we compare the local index to the server's index for server side changes.
+    void verifyChecksumsPeriodic() @trusted {
+        downloadChecksumIndexFromServer();
     }
 }
