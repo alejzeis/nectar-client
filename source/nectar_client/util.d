@@ -251,8 +251,18 @@ string generateFileSHA256Checksum(in string file) {
 	auto sha256 = new SHA256Digest();
 	auto fileHandle = File(file, "r");
 
-	foreach(ubyte[] buf; fileHandle.byChunk(8192)) {
+	debug {
+		import std.stdio;
+		writeln("pass file handle");
+	}
+
+	foreach(ubyte[] buf; fileHandle.byChunk(1024 * 1024 * 16)) {
 		sha256.put(buf);
+	}
+
+	debug {
+		import std.stdio;
+		writeln("pass file loop");
 	}
 
 	auto hash = sha256.finish();
@@ -328,7 +338,7 @@ template RequestErrorHandleMixin(string operation, int[] expectedStatusCodes, bo
 	";
 }
 
-void issueGETRequest(in string url, void delegate(ushort status, string content, CurlException err) callback) {
+void issueGETRequest(in string url, void delegate(ushort status, string content, CurlException err) callback) @trusted {
 
 	string content;
 
@@ -342,3 +352,53 @@ void issueGETRequest(in string url, void delegate(ushort status, string content,
 
 	callback(request.statusLine().code, content, null);
 }
+
+void issueGETRequestDownload(in string url, in string downloadLocation) @system {
+	import etc.c.curl;
+
+	import std.string : toStringz;
+	import std.stdio : File;
+	import std.array : split, join;
+	import std.file : mkdirRecurse;
+
+	// In case this file is under directories that have not been created, create the parent ones that house the file
+
+	// Split the downloadLocation string by path separator to isolate the actual filename and remove it from the path, leaving the parent directories only.
+	string[] pathDirsArray = split(downloadLocation, PATH_SEPARATOR)[0..$ - 1];
+	string pathDirs = join(pathDirsArray, PATH_SEPARATOR);
+
+	mkdirRecurse(pathDirs); // Recursively create new directories that this file may need, if they exist it ignores them
+
+	// Variables
+
+	CURL *curl;
+	CURLcode res;
+	auto urlPtr = toStringz(url);
+	auto outName = toStringz(downloadLocation);
+
+	// Begin download process
+
+	curl = curl_easy_init();
+	if(curl) {
+		File file = File(downloadLocation, "wb");
+		curl_easy_setopt(curl, CurlOption.url, toStringz(url));
+		curl_easy_setopt(curl, CurlOption.writefunction, &issueGETRequestDownload_writeData);
+		curl_easy_setopt(curl, CurlOption.writedata, file.getFP());
+
+		CURLcode response = curl_easy_perform(curl);
+
+		debug {
+			import std.stdio;
+			writeln("CURLcode is: ", response);
+		}
+
+		curl_easy_cleanup(curl);
+		file.close();
+	}
+}
+
+extern(C) private size_t issueGETRequestDownload_writeData(void *ptr, size_t size, size_t nmemb, core.stdc.stdio.FILE *stream) {
+	import core.stdc.stdio;
+	return fwrite(ptr, size, nmemb, stream);
+}
+

@@ -31,8 +31,10 @@ class FTSManager {
         string publicCacheDir;
         string userCacheDir;
 
-        JSONValue _publicChecksumIndex;
         JSONValue _checksumIndex;
+
+        JSONValue _serverPublicChecksumIndex;
+        JSONValue _serverUserChecksumIndex;
     }
 
     this(Client client, in bool useSystemDirs) {
@@ -72,14 +74,28 @@ class FTSManager {
         downloadChecksumIndexFromServer();
 
         this.client.logger.info("Done!");
+
+        initalSearchForChanges();
     }
 
     private void buildChecksumsDir(in string directory, ref JSONValue rootJSON) @system {
         foreach(DirEntry e; dirEntries(directory, SpanMode.shallow)) {
             if(e.isDir()) {
+                debug {
+                    import std.stdio;
+                    writeln("Entering directory ", e.name());
+                }
                 buildChecksumsDir(e.name(), rootJSON);
             } else {
+                debug {
+                    import std.stdio;
+                    writeln("Build ", e.name());
+                }
                 rootJSON[e.name()] = generateFileSHA256Checksum(e.name());
+                debug {
+                    import std.stdio;
+                    writeln("Built ", e.name());
+                }
             }
         }
     }
@@ -104,7 +120,7 @@ class FTSManager {
                 return;
             }
 
-            this._publicChecksumIndex = json;
+            this._serverPublicChecksumIndex = json;
         });
 
         if(this.client.loggedIn) {
@@ -122,7 +138,7 @@ class FTSManager {
                     return;
                 }
 
-                this._checksumIndex = json;
+                this._serverUserChecksumIndex = json;
             });
         }
     }
@@ -131,5 +147,40 @@ class FTSManager {
     /// Then we compare the local index to the server's index for server side changes.
     void verifyChecksumsPeriodic() @trusted {
         downloadChecksumIndexFromServer();
+    }
+
+    private void initalSearchForChanges() @trusted {
+        // Search for differences in checksums between the server and client for the public store
+
+        foreach(entry; this._serverPublicChecksumIndex.array()) {
+            debug {
+                import std.stdio;
+                writeln(entry);
+            }
+
+            // Check if we have the file downloaded in the cache
+            if(!exists(this.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str())) {
+                // We don't have the file saved, need to download it.
+                downloadAndSaveFile(entry["path"].str(), true);
+            } else if(entry["checksum"].str() != this._checksumIndex["public" ~ PATH_SEPARATOR ~ entry["path"].str()].str()) {
+                // Check for difference between server's checksum for the file and our checksum for the file
+            }
+        }
+    }
+
+    private void downloadAndSaveFile(in string path, in bool isPublic) {
+        string url = this.client.apiURL ~ "/fts/download?token=" ~ this.client.sessionToken ~ "&public=" ~ to!string(isPublic) ~ "&path=" ~ urlsafeB64Encode(path);
+
+        // TODO: CURL DOWNLOAD
+        issueGETRequestDownload(url, 
+            (isPublic ? this.publicCacheDir : (this.userCacheDir ~ PATH_SEPARATOR ~ this.client.loggedInUser))
+            ~ PATH_SEPARATOR ~ path
+        );
+
+        debug {
+            import std.stdio;
+            writeln("saving to, ", (isPublic ? this.publicCacheDir ~ PATH_SEPARATOR: (this.userCacheDir ~ PATH_SEPARATOR ~ this.client.loggedInUser))
+            ~ PATH_SEPARATOR ~ path);
+        }
     }
 }

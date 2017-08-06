@@ -21,9 +21,9 @@ import nectar_client.service;
 import nectar_client.operation;
 
 immutable string SOFTWARE = "Nectar-Client";
-immutable string SOFTWARE_VERSION = "1.6.1-alpha3";
+immutable string SOFTWARE_VERSION = "1.7.1-alpha3";
 immutable string RUNTIME = "DRUNTIME, compiled by " ~ __VENDOR__ ~ ", version " ~ to!string(__VERSION__);
-immutable string API_MAJOR = "6";
+immutable string API_MAJOR = "7";
 immutable string API_MINOR = "1";
 
 class Client {
@@ -78,6 +78,7 @@ class Client {
         shared Tid _operationProcessingTid;
 
         shared bool _loggedIn = false;
+        shared string _loggedInUser = "";
     }
 
     @property Logger logger() @trusted nothrow { return cast(Logger) this._logger; }
@@ -102,6 +103,7 @@ class Client {
     @property Tid operationProcessingTid() @trusted nothrow { return cast(Tid) this._operationProcessingTid; }
 
     @property bool loggedIn() @safe nothrow { return _loggedIn; }
+    @property string loggedInUser() @safe nothrow { return cast(string) this._loggedInUser; }
 
     public this(in bool useSystemDirs, in bool isService) @trusted {
         this.useSystemDirs = useSystemDirs;
@@ -497,7 +499,7 @@ class Client {
                     // Set up repeating task to check for new operations.
                     this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, CHECK_OPERATIONS_INTERVAL), true);
                     /// Set up repeating task to check for server-side changes to FTS files so we can sync.
-                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.ftsManager.verifyChecksumsPeriodic, VERIFY_CHECKSUMS_PERIODIC_INTERVAL));
+                    this.scheduler.registerTask(Task.constructRepeatingTask(&this.ftsManager.verifyChecksumsPeriodic, VERIFY_CHECKSUMS_PERIODIC_INTERVAL, false));
 
                     return; // Done!
                 }
@@ -576,7 +578,7 @@ class Client {
                 // Set up repeating task to check for new operations.
                 this.scheduler.registerTask(Task.constructRepeatingTask(&this.checkOperationQueue, CHECK_OPERATIONS_INTERVAL), true);
                 /// Set up repeating task to check for server-side changes to FTS files so we can sync.
-                this.scheduler.registerTask(Task.constructRepeatingTask(&this.ftsManager.verifyChecksumsPeriodic, VERIFY_CHECKSUMS_PERIODIC_INTERVAL));
+                this.scheduler.registerTask(Task.constructRepeatingTask(&this.ftsManager.verifyChecksumsPeriodic, VERIFY_CHECKSUMS_PERIODIC_INTERVAL, false));
             }
 
             //std.file.write
