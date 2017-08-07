@@ -10,9 +10,10 @@
 	"targetType": "executable",
 	"dependencies": {
 		"derelict_extras-jwt": "~>1.0.0",
+		"openssl": "~>1.1.5+1.0.1g",
 		"consoled": "~>1.0.4"
 	},
 	"libs": [
-		"curl"
+	    "curl"
 	]
 }

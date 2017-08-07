@@ -245,28 +245,42 @@ string convertTZWindowsToLinux(in string windowsTZ) @trusted {
 }
 
 string generateFileSHA256Checksum(in string file) {
-	import std.digest.sha;
+	import deimos.openssl.sha;
+
 	import std.stdio : File;
 
-	auto sha256 = new SHA256Digest();
-	auto fileHandle = File(file, "r");
+	import core.stdc.stdio : fread, sprintf;
 
-	debug {
-		import std.stdio;
-		writeln("pass file handle");
+
+	// Initalize variables
+	SHA256_CTX shaCtx;
+	File f = File(file, "rb");
+	ubyte[SHA256_DIGEST_LENGTH] hash;
+	immutable int chunkSize = 8192;
+	byte[chunkSize] buffer;
+
+	// Initalize the SHA256 context
+	SHA256_Init(&shaCtx);
+
+	// Read chunks from the file and pass them to OpenSSL
+	size_t bytesRead = 0;
+	while((bytesRead = fread(buffer.ptr, 1, chunkSize, f.getFP())) != false) {
+		SHA256_Update(&shaCtx, buffer.ptr, bytesRead);
 	}
 
-	foreach(ubyte[] buf; fileHandle.byChunk(1024 * 1024 * 16)) {
-		sha256.put(buf);
+	// Finalize and create the hash
+	SHA256_Final(hash.ptr, &shaCtx);
+	f.close();
+
+	// Format the digest to the full length hexadecimal string
+	char[SHA256_DIGEST_LENGTH*2+1] output;
+
+	for(uint i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+		sprintf(&output[i * 2], "%02X", hash[i]);
 	}
 
-	debug {
-		import std.stdio;
-		writeln("pass file loop");
-	}
-
-	auto hash = sha256.finish();
-	return cast(string) hash;
+	// There is an extra zero at the end of the array, which causes problems when checking if hashes are equal.
+	return cast(string) (output.dup[0..$-1]);
 }
 
 // THE FOLLOWING CODE IS FROM THE JWTD PROJECT, UNDER THE MIT LICENSE
