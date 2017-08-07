@@ -5,6 +5,8 @@ import std.json;
 import std.file;
 import std.algorithm;
 import std.net.curl;
+import std.uni : toUpper;
+import std.string : strip;
 
 import nectar_client.client;
 import nectar_client.util;
@@ -162,8 +164,16 @@ class FTSManager {
             if(!exists(this.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str())) {
                 // We don't have the file saved, need to download it.
                 downloadAndSaveFile(entry["path"].str(), true);
-            } else if(entry["checksum"].str() != this._checksumIndex["public" ~ PATH_SEPARATOR ~ entry["path"].str()].str()) {
+            } else if(entry["checksum"].str().toUpper() != this._checksumIndex[this.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str()].str().toUpper()) {
                 // Check for difference between server's checksum for the file and our checksum for the file
+                debug this.client.logger.warning("Checksum difference for " ~ entry["path"].str());
+
+                // There is a difference in the checksums. Since this is a public store, the user shouldn't be able to modify files.
+                // So we assume this is a server-side change and redownload the file.
+                // TODO: BETTER SOLUTION, ADMINS CAN CHANGE WHEN LOGGED IN AND HERE SHOULD PROPERLY CHECK FOR last-modified-by
+
+                std.file.remove(this.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str()); // Delete the file we have saved
+                downloadAndSaveFile(entry["path"].str(), true); // Redownload the file
             }
         }
     }
