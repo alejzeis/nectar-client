@@ -26,17 +26,17 @@ string getFTSCacheLocation(in bool useSystemDirs = false) @trusted {
 /// Class which handles all aspects of the File Transfer System (FTS)
 class FTSManager {
 
-    private {
+    package {
         Client client;
 
         string rootCacheDir;
         string publicCacheDir;
         string userCacheDir;
 
-        JSONValue _checksumIndex;
+        JSONValue _localChecksumIndex;
 
-        JSONValue _serverPublicChecksumIndex;
-        JSONValue _serverUserChecksumIndex;
+        FTSStore publicStore;
+        FTSStore userStore;
     }
 
     this(Client client, in bool useSystemDirs) {
@@ -66,18 +66,20 @@ class FTSManager {
     void initalVerifyChecksums() @trusted {
         this.client.logger.info(" ------Generating local FTS checksum index (this could take a while!)...");
 
-        this._checksumIndex = JSONValue();
-        buildChecksumsDir(this.rootCacheDir, this._checksumIndex);
+        this._localChecksumIndex = JSONValue();
+        buildChecksumsDir(this.rootCacheDir, this._localChecksumIndex);
 
         this.client.logger.info(" ------Done!");
 
+        this.publicStore = new FTSStore(FTSStoreType.PUBLIC, this);
+
         this.client.logger.info("Downloading inital checksum index from the server...");
 
-        downloadChecksumIndexFromServer();
+        this.publicStore.downloadChecksumIndexFromServer();
 
         this.client.logger.info("Done!");
 
-        initalSearchForChanges();
+        this.publicStore.initalSearchForChanges();
     }
 
     private void buildChecksumsDir(in string directory, ref JSONValue rootJSON) @system {
@@ -102,16 +104,54 @@ class FTSManager {
         }
     }
 
+    /// Downloads the server's checksum index again in case of new changes.
+    /// Then we compare the local index to the server's index for server side changes.
+    void verifyChecksumsPeriodic() @trusted {
+        publicStore.downloadChecksumIndexFromServer();
+        if(this.userStore !is null) {
+            this.userStore.downloadChecksumIndexFromServer();
+        }
+    }
+}
+
+/++
+    Represents the different possible types of FTS stores.
+    Currently only the USER and a PUBLIC stores exist.
++/
+enum FTSStoreType {
+    USER = 0,
+    PUBLIC = 1
+}
+
+/++
+    Represents a File Transfer System (FTS) Store, for a user
+    or the public store. This class handles updating the local cache based on
+    the server's checksum index and also communicating with the server about
+    changes.
++/
+class FTSStore {
+    immutable FTSStoreType storeType;
+
+    @property FTSManager manager() @trusted { return cast(FTSManager) _manager; }
+    @property private JSONValue checksumIndex() @trusted { return cast(JSONValue) _checksumIndex; }
+
+    private shared FTSManager _manager;
+    private shared JSONValue _checksumIndex;
+
+    this(in FTSStoreType storeType, FTSManager manager) {
+        this.storeType = storeType;
+        this._manager = cast(shared) manager;
+    }
+
     private void downloadChecksumIndexFromServer() {
-        // Download public index first
-        debug this.client.logger.info("Downloading public index...");
+        debug this.manager.client.logger.info("Downloading index...");
 
-        string url = this.client.apiURL ~ "/fts/checksumIndex?token=" ~ this.client.sessionToken;
+        string url = this.manager.client.apiURL ~ "/fts/checksumIndex?token=" ~ this.manager.client.sessionToken;
 
-        auto logger = this.client.logger; // Need this due to mixin
+        auto logger = this.manager.client.logger; // Need this due to mixin
 
-        issueGETRequest(url ~ "&public=true", (ushort status, string content, CurlException ce) {
-            mixin(RequestErrorHandleMixin!("token request", [200], true, false));
+        issueGETRequest(url ~ "&public=" ~ (this.storeType == FTSStoreType.PUBLIC ? "true" : "false"), (ushort status, string content, CurlException ce) {
+            mixin(RequestErrorHandleMixin!("Download checksum index", [200], true, false));
 
             JSONValue json;
             try {
@@ -122,74 +162,74 @@ class FTSManager {
                 return;
             }
 
-            this._serverPublicChecksumIndex = json;
+            this._checksumIndex = json;
         });
+    }
 
-        if(this.client.loggedIn) {
-            debug this.client.logger.info("Downloading user index...");
-
-            issueGETRequest(url ~ "&public=false", (ushort status, string content, CurlException ce) {
-                mixin(RequestErrorHandleMixin!("token request", [200], true, false));
-
-                JSONValue json;
-                try {
-                    json = parseJSON(content);
-                } catch(JSONException e) {
-                    logger.fatal("Checksum index returned invalid JSON, aborting!");
-                    // fatal throws object.Error
-                    return;
-                }
-
-                this._serverUserChecksumIndex = json;
-            });
+    package void initalSearchForChanges() @safe {
+        final switch(this.storeType) {
+            case FTSStoreType.PUBLIC:
+                initalSearchForChangesPublicStore();
+                break;
+            case FTSStoreType.USER:
+                initalSearchForChangesUserStore();
+                break;
         }
     }
 
-    /// Downloads the server's checksum index again in case of new changes.
-    /// Then we compare the local index to the server's index for server side changes.
-    void verifyChecksumsPeriodic() @trusted {
-        downloadChecksumIndexFromServer();
-    }
-
-    private void initalSearchForChanges() @trusted {
+    private void initalSearchForChangesPublicStore() @trusted {
         // Search for differences in checksums between the server and client for the public store
 
-        foreach(entry; this._serverPublicChecksumIndex.array()) {
+        foreach(entry; this.checksumIndex.array()) {
             debug {
                 import std.stdio;
                 writeln(entry);
             }
 
             // Check if we have the file downloaded in the cache
-            if(!exists(this.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str())) {
+            if(!exists(this.manager.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str())) {
                 // We don't have the file saved, need to download it.
-                downloadAndSaveFile(entry["path"].str(), true);
-            } else if(entry["checksum"].str().toUpper() != this._checksumIndex[this.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str()].str().toUpper()) {
+                downloadAndSaveFile(entry["path"].str());
+            } else if(entry["checksum"].str().toUpper() != this.manager._localChecksumIndex[this.manager.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str()].str().toUpper()) {
                 // Check for difference between server's checksum for the file and our checksum for the file
-                debug this.client.logger.warning("Checksum difference for " ~ entry["path"].str());
+                debug this.manager.client.logger.warning("Checksum difference for " ~ entry["path"].str());
 
                 // There is a difference in the checksums. Since this is a public store, the user shouldn't be able to modify files.
                 // So we assume this is a server-side change and redownload the file.
                 // TODO: BETTER SOLUTION, ADMINS CAN CHANGE WHEN LOGGED IN AND HERE SHOULD PROPERLY CHECK FOR last-modified-by
+                // TODO: DELTA COMPRESSION
 
-                std.file.remove(this.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str()); // Delete the file we have saved
-                downloadAndSaveFile(entry["path"].str(), true); // Redownload the file
+                std.file.remove(this.manager.publicCacheDir ~ PATH_SEPARATOR ~ entry["path"].str()); // Delete the file we have saved
+                downloadAndSaveFile(entry["path"].str()); // Redownload the file
             }
         }
+
+        // TODO: Implement checking if a file was deleted on the server side.
+        
+        /*
+        foreach(string key, JSONValue entry; this.manager._localChecksumIndex.object) {
+            debug {
+                import std.stdio;
+                writeln(key, " ", entry);
+            }
+        }*/
     }
 
-    private void downloadAndSaveFile(in string path, in bool isPublic) {
-        string url = this.client.apiURL ~ "/fts/download?token=" ~ this.client.sessionToken ~ "&public=" ~ to!string(isPublic) ~ "&path=" ~ urlsafeB64Encode(path);
+    private void initalSearchForChangesUserStore() @trusted {
 
-        // TODO: CURL DOWNLOAD
+    }
+
+    private void downloadAndSaveFile(in string path) {
+        string url = this.manager.client.apiURL ~ "/fts/download?token=" ~ this.manager.client.sessionToken ~ "&public=" ~ (this.storeType == FTSStoreType.PUBLIC ? "true" : "false") ~ "&path=" ~ urlsafeB64Encode(path);
+
         issueGETRequestDownload(url, 
-            (isPublic ? this.publicCacheDir : (this.userCacheDir ~ PATH_SEPARATOR ~ this.client.loggedInUser))
+            (this.storeType == FTSStoreType.PUBLIC ? this.manager.publicCacheDir : (this.manager.userCacheDir ~ PATH_SEPARATOR ~ this.manager.client.loggedInUser))
             ~ PATH_SEPARATOR ~ path
         );
 
         debug {
             import std.stdio;
-            writeln("saving to, ", (isPublic ? this.publicCacheDir ~ PATH_SEPARATOR: (this.userCacheDir ~ PATH_SEPARATOR ~ this.client.loggedInUser))
+            writeln("saving to, ", (this.storeType == FTSStoreType.PUBLIC ? this.manager.publicCacheDir : (this.manager.userCacheDir ~ PATH_SEPARATOR ~ this.manager.client.loggedInUser))
             ~ PATH_SEPARATOR ~ path);
         }
     }
